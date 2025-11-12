@@ -1,0 +1,1096 @@
+:root{
+  --primary:#007BFF;
+  --primary-dark:#0056b3;
+  --bg:#f7f7f7;
+  --card-bg:#ffffff;
+  --muted:#666;
+  --radius:12px;
+  --filter-item-height: 36px;
+
+}
+
+/* FONTES LOCAIS */
+@font-face {
+  font-family: 'Lexend';
+  src: url('https://agenda-de-treinamento.vercel.app/fonts/Lexend-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lexend';
+  src: url('https://agenda-de-treinamento.vercel.app/fonts/Lexend-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* RESET GERAL */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Lexend', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: #123;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* MAIN CONTEÚDO */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* HEADER */
+.main-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 0;
+  background-color: #fff;
+  box-shadow:
+    0 6px 18px rgba(0,123,255,0.42),
+    0 16px 40px rgba(0,123,255,0.18),
+    0 2px 0 rgba(0,123,255,0.08);
+  transition: box-shadow 280ms cubic-bezier(.2,.9,.2,1), background-color 220ms;
+  pointer-events: auto;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .main-header { -webkit-backdrop-filter: none; }
+}
+
+.main-header .logo {
+  position: absolute;
+  left: 40px;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+.main-header .logo img {
+  height: 48px;
+  width: auto;
+  display: block;
+}
+.main-header h1 {
+  margin: 0;
+  font-family: 'Lexend', sans-serif;
+  font-weight: 600;
+  font-size: 24px;
+  color: #123;
+  text-align: center;
+}
+
+/* CONTROLS */
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}/* MAIN CONTEÚDO */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* HEADER */
+.main-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 0;
+  background-color: #fff;
+  box-shadow:
+    0 6px 18px rgba(0,123,255,0.42),
+    0 16px 40px rgba(0,123,255,0.18),
+    0 2px 0 rgba(0,123,255,0.08);
+  transition: box-shadow 280ms cubic-bezier(.2,.9,.2,1), background-color 220ms;
+  pointer-events: auto;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .main-header { -webkit-backdrop-filter: none; }
+}
+
+.main-header .logo {
+  position: absolute;
+  left: 40px;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Logo hover + clique animado */
+.main-header .logo img {
+  height: 48px;
+  width: auto;
+  display: block;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Hover: zoom + leve pulsação */
+.main-header .logo img:hover {
+  transform: scale(1.25);
+  box-shadow: 0 10px 28px rgba(0,123,255,0.25);
+  animation: pulseHover 0.6s ease-in-out;
+}
+
+@keyframes pulseHover {
+  0%, 100% { transform: scale(1.25); }
+  50% { transform: scale(1.28); }
+}
+
+/* Clique: rotação + pulsação */
+.main-header .logo img.rotate-flush {
+  animation: rotateFlush 0.6s linear, pulseClick 0.6s ease-in-out;
+}
+
+@keyframes rotateFlush {
+  0%   { transform: scale(1.25) rotate(0deg); }
+  25%  { transform: scale(1.25) rotate(90deg); }
+  50%  { transform: scale(1.25) rotate(180deg); }
+  75%  { transform: scale(1.25) rotate(270deg); }
+  100% { transform: scale(1.25) rotate(360deg); }
+}
+
+@keyframes pulseClick {
+  0%, 100% { transform: scale(1.25); }
+  50% { transform: scale(1.35); }
+}
+
+
+.main-header h1 {
+  margin: 0;
+  font-family: 'Lexend', sans-serif;
+  font-weight: 600;
+  font-size: 24px;
+  color: #123;
+  text-align: center;
+}
+
+
+.filter-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: relative;
+}
+
+/* quick select */
+label.label { font-weight: 600; color: var(--primary); font-size: 14px; }
+select {
+  padding: 10px 36px 10px 12px;
+  border-radius: 25px;
+  border: 2px solid var(--primary);
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10' viewBox='0 0 14 10'%3E%3Cpath fill='%23007BFF' d='M7 10L0.071 0h13.858z'/%3E%3C/svg%3E") no-repeat right 12px center;
+  background-size: 14px;
+  color: var(--primary);
+  appearance: none;
+  cursor: pointer;
+  font-size: 15px;
+  min-width: 160px;
+}
+
+/* toggle botão do painel de filtros (desktop + mobile) */
+.filters-toggle {
+  margin-left: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  box-shadow: 0 6px 18px rgba(0,123,255,0.14);
+}
+.filters-toggle:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,123,255,0.18); }
+.filters-toggle:focus { outline: none; box-shadow: 0 0 12px rgba(0,123,255,0.28); }
+
+/* painel de checkboxes (dinâmico) */
+.checkbox-filters {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+  display: none; /* shown only with .open class */
+  z-index: 1000;
+}
+.checkbox-filters.open {
+  display: block;
+}
+.checkbox-filters .chk {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.checkbox-filters .chk input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+.checkbox-filters .chk label { font-size: 14px; color: #222; }
+
+/* buttons area */
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+button {
+  padding: 10px 14px;
+  border-radius: 25px;
+  border: 2px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+button:focus { outline: none; box-shadow: 0 0 10px rgba(0,123,255,0.28); }
+
+/* feedback */
+.feedback { text-align: center; margin: 8px 0 16px; color: var(--muted); }
+
+/* GRID CARDS */
+.container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+/* CARD */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(10, 10, 12, 0.06);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 160ms, box-shadow 160ms;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  outline: none;
+}
+.card img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  object-position: 35% 29%; /* primeira = horizontal (center), segunda = vertical (top->bottom) */
+  background: #eee;
+  display: block;
+}
+
+
+.card.past img { filter: grayscale(100%); opacity: 0.6; }
+
+.card:hover,
+.card:focus,
+.card:active,
+.card:focus-within {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 34px rgba(10,10,12,0.12);
+  border-color: rgba(0,123,255,0.25);
+}
+
+.card:hover,
+.card:focus,
+.card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 10px 26px rgba(0,123,255,0.14), 0 0 10px rgba(0,123,255,0.08);
+}
+
+.card.selected {
+  box-shadow: 0 18px 40px rgba(0,123,255,0.22), 0 0 16px rgba(0,123,255,0.18);
+}
+
+.card-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.card-title { font-weight: 700; font-size: 15px; color: #111; }
+.card-sub { font-size: 13px; color: var(--muted); }
+.card-distance { font-size: 13px; color: var(--primary); font-weight: 600; }
+.card-link { margin-top: auto; text-align: right; }
+.small { font-size: 12px; color: #999; }
+.card.nearest {
+  border-color: var(--primary);
+  box-shadow: 0 20px 44px rgba(0,123,255,0.22), 0 0 18px rgba(0,123,255,0.18);
+  transform: translateY(-8px);
+}
+
+/* RESPONSIVO */
+@media (max-width: 1024px) {
+  main { padding: 16px; }
+  .controls { gap: 10px; flex-wrap: wrap; }
+  .checkbox-filters { width: 320px; }
+  .card img { height: 120px; }
+}
+
+/* MOBILE: toggle controls visibility via .open class (panel closed by default) */
+@media (max-width: 640px) {
+  main { padding: 12px; }
+  .controls { flex-direction: column; align-items: stretch; gap: 10px; margin-top: 12px; }
+  .filter-container { width: 100%; }
+  select { width: 100%; min-width: auto; }
+  .filters-toggle { display: inline-flex; align-items: center; } /* show toggle on mobile */
+
+  /* checkbox list fica inicialmente escondida, abre quando .open */
+  .checkbox-filters {
+    position: relative;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-height: 320px;
+    margin-top: 6px;
+    display: none; /* will be shown with .open */
+    box-shadow: none;
+    border-radius: 8px;
+    padding: 8px;
+    background: #fff;
+  }
+  .checkbox-filters.open { display: block; }
+
+  .checkbox-filters .chk { padding: 6px 4px; border-radius: 6px; }
+  .buttons { flex-direction: column; gap: 8px; width: 100%; }
+
+  .main-header { padding: 20px 16px; }
+  .main-header h1 { font-size: 20px; }
+  .main-header .logo { left: 16px; }
+  .main-header .logo img { height: 40px; }
+  .card img { height: 100px; }
+  .card { min-height: 160px; }
+}
+
+
+/* Filtros - correção de fundo e responsividade */
+#checkboxFilters {
+  position: relative;   /* cria contexto de empilhamento */
+  z-index: 999;
+  box-sizing: border-box;
+  padding: 10px;
+}
+
+/* wrapper que contém as 3 colunas */
+#checkboxFilters .filters-groups {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* cada coluna */
+#checkboxFilters .filter-group {
+  flex: 1 1 0;
+  min-width: 220px; /* ajusta conforme seu layout */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* CAIXA BRANCA que envolve os checkboxes — aplicar aqui resolve transparência */
+#checkboxFilters .filters-list {
+  background: #ffffff;               /* fundo branco em todas as colunas */
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  border-radius: 8px;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  /* comportamento de rolagem interno quando necessário */
+  max-height: 320px;    /* ajustar se quiser ver mais sem rolar */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* estilo dos checkboxes (opcional, melhora legibilidade) */
+#checkboxFilters .filters-list .chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+/* header do painel e botão limpar */
+#checkboxFilters .filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+#checkboxFilters .btn-clear-filters {
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.08);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* abertura do painel - garante que panela aberta mostre conteúdo (se JS usa maxHeight) */
+#checkboxFilters.open {
+  /* se o JS controla maxHeight, isso é apenas fallback */
+  max-height: 80vh;
+  overflow: auto;
+}
+
+/* pequeno ajuste: evitar que sombras sejam cortadas se pai tiver overflow hidden */
+#checkboxFilters,
+#checkboxFilters * {
+  box-sizing: border-box;
+}
+
+/* RESPONSIVO: tela pequena — empilha as colunas (mobile) */
+@media (max-width: 760px) {
+  #checkboxFilters .filters-groups {
+    flex-direction: column;
+    gap: 12px;
+  }
+  /* deixa listas menores e com rolagem prática em mobile */
+  #checkboxFilters .filters-list {
+    max-height: 220px;
+  }
+  /* evita painel muito grande na tela mobile */
+  #checkboxFilters.open {
+    max-height: 70vh;
+    overflow: auto;
+  }
+}
+
+
+#checkboxFilters .filters-list {
+  background: #ffffff;               /* fundo branco em todas as colunas */
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  border-radius: 8px;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  /* CHANGED: limitar visual a 10 itens (usar a var --filter-item-height) e habilitar rolagem interna */
+  max-height: calc(var(--filter-item-height) * 10);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* estilo global do botão Limpar (quando estiver fora do painel) */
+.btn-clear-filters {
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.08);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 700;
+  margin-left: 8px;
+}
+
+/* quando o botão estiver dentro do painel (se houver casos), mantém o visual */
+#checkboxFilters .btn-clear-filters {
+  color: var(--primary);
+}
+
+/* mobile: força listas menores (se desejar) */
+@media (max-width: 760px) {
+  #checkboxFilters .filters-list {
+    /* em mobile pode ser aceitável mostrar menos itens para caber melhor */
+    max-height: calc(var(--filter-item-height) * 6);
+  }
+}
+
+/* ======================
+   OVERLAY FLUTUANTE (checkbox panel)
+   Substitua as regras antigas de .checkbox-filters / #checkboxFilters por estas.
+   ====================== */
+
+/* container do toggle precisa ser contexto posicionável (você já tem .filter-container { position: relative } ) */
+.filter-container { position: relative; z-index: 9999; }
+
+/* painel flutuante - remove do fluxo da página */
+#checkboxFilters,
+.checkbox-filters {
+  position: absolute;                 /* flutua sobre o conteúdo */
+  top: calc(100% + 10px);             /* logo abaixo do toggle */
+  left: 0;
+  width: 360px;                       /* fixe (ajuste se quiser) */
+  max-height: 70vh;                   /* garante que não ocupe toda a tela */
+  overflow: hidden;                   /* controlado internamente por listas */
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+  display: none;                      /* mostrado apenas com .open */
+  z-index: 10000;                      /* acima do restante */
+  box-sizing: border-box;
+}
+
+/* quando o JS adiciona .open, exibimos como overlay */
+#checkboxFilters.open,
+.checkbox-filters.open {
+  display: block;
+}
+
+/* cabeçalho (o título "Filtros") fica dentro do painel normalmente */
+#checkboxFilters .filters-header { margin-bottom: 10px; }
+
+/* wrapper que contém as 3 colunas permanece flex, mas não empurra a página */
+#checkboxFilters .filters-groups {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* cada coluna */
+#checkboxFilters .filter-group {
+  flex: 1 1 0;
+  min-width: 180px; /* permita encolher um pouco */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* lista branca dentro de cada coluna - rolagem interna limitada a 10 itens */
+#checkboxFilters .filters-list {
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+  border-radius: 8px;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: calc(var(--filter-item-height,36px) * 10); /* mostra ~10 itens */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* estilo dos itens */
+#checkboxFilters .filters-list .chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+}
+
+/* fallback - botão Limpar (fora do painel) */
+.btn-clear-filters { margin-left: 10px; }
+
+/* ===== MOBILE =====
+   Em telas pequenas preferimos que o painel fique relative/empilhado (já existente no seu layout mobile).
+   */
+@media (max-width: 640px) {
+  #checkboxFilters,
+  .checkbox-filters {
+    position: relative;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-height: none;
+    display: none;            /* shown only when .open (JS) */
+    box-shadow: none;
+    border-radius: 8px;
+    padding: 8px;
+  }
+  #checkboxFilters.open,
+  .checkbox-filters.open { display: block; }
+
+  /* listas menores no mobile (6 itens visíveis) */
+  #checkboxFilters .filters-list { max-height: calc(var(--filter-item-height,36px) * 6); }
+}
+
+/* ===== FIX: Layout e fundo consistente para filtros (cole no final do CSS) ===== */
+
+#checkboxFilters,
+.checkbox-filters {
+  box-sizing: border-box;
+}
+
+/* wrapper de colunas: permitir shrink correto */
+#checkboxFilters .filters-groups,
+.checkbox-filters .filters-groups {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+  align-items: stretch; /* garante mesmo height nas colunas */
+  box-sizing: border-box;
+}
+
+/* cada coluna pode encolher sem causar overflow */
+#checkboxFilters .filter-group,
+.checkbox-filters .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0; /* ESSENCIAL para permitir shrink em flexbox */
+  box-sizing: border-box;
+}
+
+/* caixa branca dentro de cada coluna — ocupa 100% */
+#checkboxFilters .filters-list,
+.checkbox-filters .filters-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: calc(var(--filter-item-height,36px) * 10);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* cada item ocupa toda a largura da lista */
+#checkboxFilters .filters-list .chk,
+.checkbox-filters .filters-list .chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* label preenche o espaço restante — evita corte do texto e mantém o fundo contínuo */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  display: block;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
+}
+
+/* checkbox não empurra o texto */
+#checkboxFilters .filters-list .chk input[type="checkbox"],
+.checkbox-filters .filters-list .chk input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* hover visual leve */
+#checkboxFilters .filters-list .chk:hover,
+.checkbox-filters .filters-list .chk:hover {
+  background: rgba(0,123,255,0.04);
+}
+
+/* mobile: empilha colunas sem overflow */
+@media (max-width: 760px) {
+  #checkboxFilters .filters-groups,
+  .checkbox-filters .filters-groups {
+    flex-direction: column;
+    gap: 12px;
+  }
+  #checkboxFilters .filters-list,
+  .checkbox-filters .filters-list {
+    max-height: calc(var(--filter-item-height,36px) * 6);
+  }
+}
+
+
+
+
+/* Mostrar palavras inteiras em várias linhas (não abreviar com ... ) */
+#checkboxFilters .filters-list .chk,
+.checkbox-filters .filters-list .chk {
+  display: flex;
+  align-items: flex-start; /* permite que labels multi-linha cresçam para baixo */
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Label agora permite quebra em espaços, mantendo palavras inteiras */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  display: block;
+  flex: 1 1 auto;
+  white-space: normal;      /* permite quebra de linha em espaços */
+  word-break: normal;       /* não quebra palavras no meio */
+  overflow-wrap: normal;    /* evita quebrar a palavra — só quebra em espaços */
+  hyphens: none;
+  line-height: 1.2;
+  margin: 0;
+}
+
+
+
+/* 1) manter cada item em uma linha e habilitar scroll horizontal na lista */
+#checkboxFilters .filters-list,
+.checkbox-filters .filters-list {
+  overflow-x: auto;               /* permite rolagem horizontal se necessário */
+  overflow-y: auto;               /* mantém rolagem vertical também */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* label em uma única linha */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  white-space: nowrap;            /* NUNCA quebra linha */
+  overflow: visible;              /* deixa o texto "sair" visualmente (mas o scroll permite ver) */
+  text-overflow: clip;            /* sem elipse */
+  display: block;
+  flex: 1 1 auto;
+  line-height: 1.2;
+}
+
+
+/* ======= Mostrar item em 1 linha inteira e permitir scroll horizontal quando necessário ======= */
+
+/* permite rolagem horizontal no container das listas */
+#checkboxFilters .filters-list,
+.checkbox-filters .filters-list {
+  overflow-x: auto;               /* barra horizontal aparecerá se itens forem largos */
+  overflow-y: auto;               /* mantém rolagem vertical também se necessário */
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;            /* evitar que o próprio container quebre o conteúdo inline */
+}
+
+/* cada item usa sua largura natural (faz com que a lista precise rolar se for maior que o painel) */
+#checkboxFilters .filters-list .chk,
+.checkbox-filters .filters-list .chk {
+  display: inline-flex;           /* inline-flex para alinhar horizontalmente dentro do scroll */
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-width: max-content;         /* IMPORTANT: faz o item expandir até o tamanho do conteúdo */
+}
+
+/* label em 1 linha, sem quebra e sem elipse */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  display: inline-block;
+  flex: 0 0 auto;
+  line-height: 1.2;
+  margin: 0;
+}
+
+/* melhora visual: hover */
+#checkboxFilters .filters-list .chk:hover,
+.checkbox-filters .filters-list .chk:hover {
+  background: rgba(0,123,255,0.04);
+}
+
+/* mobile: caso queira comportamento diferente em telas pequenas, ajustar aqui */
+@media (max-width: 760px) {
+  /* se preferir não ter scroll horizontal no mobile, você pode empilhar as colunas (mantém behavior anterior) */
+  #checkboxFilters .filters-list,
+  .checkbox-filters .filters-list {
+    overflow-x: auto; /* deixamos igual — mobile também poderá rolar */
+  }
+}
+
+
+
+/* ===== Sem scroll horizontal, vertical OK, quebra apenas em espaços (não corta palavras) ===== */
+
+/* garante que o container das listas não gere scroll horizontal */
+#checkboxFilters .filters-list,
+.checkbox-filters .filters-list {
+  overflow-x: hidden !important;   /* SEM horizontal scroll */
+  overflow-y: auto;                /* Com scroll vertical */
+  -webkit-overflow-scrolling: touch;
+  white-space: normal !important;  /* permite quebra por palavras, não força nowrap */
+}
+
+/* itens ocupam 100% do espaço da coluna e podem quebrar em palavras (não no meio) */
+#checkboxFilters .filters-list .chk,
+.checkbox-filters .filters-list .chk {
+  display: flex;
+  align-items: flex-start; /* deixa o label crescer em altura quando quebrar */
+  gap: 8px;
+  width: 100%;
+  min-width: 0;            /* ESSENCIAL: evita overflow forçado de flex children */
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* label: quebra só em espaços, NÃO quebra palavras no meio; permite múltiplas linhas */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  display: block;
+  flex: 1 1 auto;          /* ocupa o resto do espaço */
+  white-space: normal;     /* quebra em espaços */
+  word-break: normal;      /* não quebra palavras no meio */
+  overflow-wrap: break-word; /* se houver uma "palavra" gigante (ex: URL sem espaços), quebra só aí */
+  hyphens: none;
+  line-height: 1.2;
+  margin: 0;
+}
+
+/* checkbox não empurra o texto */
+#checkboxFilters .filters-list .chk input[type="checkbox"],
+.checkbox-filters .filters-list .chk input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin-top: 3px; /* alinha visual */
+}
+
+/* hover visual leve */
+#checkboxFilters .filters-list .chk:hover,
+.checkbox-filters .filters-list .chk:hover {
+  background: rgba(0,123,255,0.04);
+}
+
+/* Mobile: mantém comportamento (colunas empilhadas) */
+@media (max-width: 760px) {
+  #checkboxFilters .filters-list,
+  .checkbox-filters .filters-list {
+    max-height: calc(var(--filter-item-height,36px) * 6);
+  }
+}
+
+
+/* ===== Aumentar largura do painel de filtros e dar mais espaço às palavras ===== */
+
+/* Largura geral do painel: se adapta à tela, mas tem um máximo confortável */
+#checkboxFilters,
+.checkbox-filters {
+  width: min(92vw, 880px);   /* até 880px em telas grandes, senão 92% da viewport */
+  left: 0;
+  right: auto;
+  box-sizing: border-box;
+}
+
+/* Quando o painel estiver posicionado absolute (desktop), centraliza visualmente se sobrar espaço */
+.filter-container { display: inline-block; position: relative; }
+#checkboxFilters.open,
+.checkbox-filters.open {
+  /* se quiser centralizar o overlay em relação ao botão, remova/ajuste left */
+  left: 0;
+}
+
+/* Layout das colunas: dar prioridade de largura para a 1ª coluna (Lojas) */
+#checkboxFilters .filters-groups,
+.checkbox-filters .filters-groups {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ajustar proporção: Lojas maior, Estados/Cidades menores */
+#checkboxFilters .filter-group:nth-child(1),
+.checkbox-filters .filter-group:nth-child(1) {
+  flex: 1.8 1 0;    /* Lojas mais larga */
+  min-width: 320px; /* garante espaço para nomes longos */
+  box-sizing: border-box;
+}
+#checkboxFilters .filter-group:nth-child(2),
+.checkbox-filters .filter-group:nth-child(3),
+.checkbox-filters .filter-group:nth-child(2),
+.checkbox-filters .filter-group:nth-child(3) {
+  flex: 1 1 0;
+  min-width: 220px; /* suficiente para cidade/estado */
+  box-sizing: border-box;
+}
+
+/* aumentar espaço interno das caixas brancas (mais padding) */
+#checkboxFilters .filters-list,
+.checkbox-filters .filters-list {
+  padding: 12px;
+  gap: 6px;
+  box-sizing: border-box;
+  max-height: calc(var(--filter-item-height,36px) * 10);
+  overflow-y: auto;
+  overflow-x: hidden; /* sem scroll horizontal */
+}
+
+/* itens com mais espaço horizontal e vertical (melhor leitura) */
+#checkboxFilters .filters-list .chk,
+.checkbox-filters .filters-list .chk {
+  padding: 8px 12px;
+  gap: 10px;
+  border-radius: 8px;
+}
+
+/* label: garantir que palavras longas apareçam inteiras na linha e que quebrem apenas entre palavras quando necessário */
+#checkboxFilters .filters-list .chk label,
+.checkbox-filters .filters-list .chk label {
+  white-space: normal;        /* permite quebra em espaços se realmente necessário */
+  word-break: normal;         /* evita quebra de palavra no meio */
+  overflow-wrap: anywhere;    /* como fallback, quebra só se necessário (evita overflow) */
+  line-height: 1.25;
+  font-size: 14px;            /* aumentar um pouco se desejar */
+}
+
+/* opcional: aumentar a altura visual de cada linha (se quiser itens mais "respirados") */
+#checkboxFilters .filters-list .chk {
+  min-height: 44px;
+  align-items: center; /* alinha checkbox verticalmente com label */
+}
+
+/* KEEP RESPONSIVE: em telas pequenas empilhar as colunas e ajustar larguras */
+@media (max-width: 860px) {
+  #checkboxFilters,
+  .checkbox-filters {
+    width: 100%;          /* ocupa toda a largura disponível no mobile */
+    left: 0;
+    right: 0;
+    padding: 8px;
+  }
+  #checkboxFilters .filter-group,
+  .checkbox-filters .filter-group {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+  #checkboxFilters .filter-group:nth-child(1),
+  .checkbox-filters .filter-group:nth-child(1) {
+    min-width: 0;
+  }
+  #checkboxFilters .filters-list,
+  .checkbox-filters .filters-list {
+    max-height: calc(var(--filter-item-height,36px) * 6);
+  }
+}
+
+/* em telas muito grandes, opcionalmente deixar o painel ainda mais largo */
+@media (min-width: 1400px) {
+  #checkboxFilters,
+  .checkbox-filters {
+    width: min(1100px, 92vw);
+  }
+}
+
+
+
+/* botão limpar invisível e não clicável (mantido no DOM) */
+.btn-clear-filters--invisible {
+  visibility: hidden !important;      /* invisível, mas mantém o espaço */
+  pointer-events: none !important;    /* não responde a cliques */
+  opacity: 0 !important;              /* garante invisibilidade visual */
+}
+
+
+/* === BLACK FRIDAY POPUP === */
+.black_friday-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.black_friday-content {
+  position: relative;
+  background: #fff;
+  border-radius: 16px;
+  max-width: 90%;
+  width: 380px;
+  padding: 15px 15px 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  text-align: center;
+}
+
+.black_friday-img {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.black_friday-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: #333;
+}
+
+.black_friday-btn {
+  background: #58b4ff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+  margin-top: 12px;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.2s ease;
+}
+
+.black_friday-btn:hover {
+  background: #3ba2ff;
+}
+
+/* Responsivo */
+@media (max-width: 480px) {
+  .black_friday-content {
+    width: 90%;
+    padding: 10px;
+  }
+  .black_friday-btn {
+    font-size: 15px;
+  }
+}
+
+
+.card.past img {
+  filter: grayscale(100%) !important;
+  opacity: 0.6 !important;
+}
