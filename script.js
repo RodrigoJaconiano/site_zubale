@@ -845,3 +845,24 @@ window.addEventListener('load', () => {
   closeBtn.addEventListener('click', closePopup);
   boraBtn.addEventListener('click', closePopup);
 });
+
+// === CARROSSEL ===
+let index = 0;
+const slides = document.querySelectorAll(".black_friday-slide");
+
+function showSlide(i) {
+  slides.forEach(s => s.classList.remove("active"));
+  slides[i].classList.add("active");
+}
+
+function nextSlide() {
+  index = (index + 1) % slides.length;
+  showSlide(index);
+}
+
+// troca a cada 3 segundos
+setInterval(nextSlide, 5000);
+
+// mostra o primeiro ao carregar
+showSlide(index);
+
