@@ -1,6 +1,11 @@
 {
+  "kv": true,
   "routes": [
     { "src": "/k", "dest": "/k.html" },
-    { "src": "/acc", "dest": "/acc.html" }
+    { "src": "/acc", "dest": "/acc.html" },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
+    }
   ]
 }
