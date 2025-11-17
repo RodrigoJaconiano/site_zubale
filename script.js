@@ -866,3 +866,4 @@ setInterval(nextSlide, 5000);
 // mostra o primeiro ao carregar
 showSlide(index);
 
+fetch(`/api/registrar?pagina=${window.location.pathname.replace('/', '') || 'index'}`);
