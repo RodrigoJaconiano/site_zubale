@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Agenda de Treinamentos - Zubale</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/x-icon" href="images/favicon.ico">
+</head>
+<body>
+  <!-- HEADER STICKY -->
+  <header class="main-header" role="banner">
+    <a href="index.html#" class="logo" aria-label="Ir para início">
+      <img src="images/zubale.png" alt="Zubale Logo" />
+    </a>
+    <h1>Agenda de Treinamentos - Zubale</h1>
+  </header>
+
+  <main>
+    <div class="controls" role="region" aria-label="Controles de filtro e ações">
+      <div class="filter-container">
+        <label for="lojaFilter" class="label"></label>
+        <select id="lojaFilter" aria-label="Filtros:">
+          <option value="Todas">Todas</option>
+        </select>
+
+        <!-- Checkbox filter container (dinâmico) -->
+        <button id="filtersToggle" class="filters-toggle" aria-expanded="false" aria-controls="checkboxFilters">Filtrar ▾</button>
+        <div id="checkboxFilters" class="checkbox-filters" aria-hidden="true"></div>
+      </div>
+
+      <div class="buttons">
+        <button id="btnLocalize" title="Encontrar loja mais próxima">📍 Me Localize</button>
+        <button id="btnClearCache" title="Limpar cache local">🗑️ Limpar busca</button>
+      </div>
+    </div>
+
+    <div id="feedback" class="feedback" role="status">Carregando dados…</div>
+
+    <section id="container" class="container" aria-live="polite"></section>
+  </main>
+
+  <script defer src="script.js"></script>
+
+<!-- POPUP BLACK FRIDAY -->
+<div class="black_friday-popup" id="blackFridayPopup">
+  <div class="black_friday-content">
+    <button class="black_friday-close" id="blackFridayClose">✖</button>
+
+    <!-- CARROSSEL -->
+        <div class="black_friday-carousel">
+    <div class="black_friday-slide active">
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLSdg5-qpWfRHZfwh0XB68J2hT3HN7dHnZ0wvwLIcKOt0CD0Nag/viewform" target="_blank">
+        <img src="images/black_friday_horizontal.png" class="black_friday-img">
+      </a>
+    </div>
+
+      <div class="black_friday-slide">
+        <img src="images/black_friday.jpeg" class="black_friday-img">
+      </div>
+    </div>
+
+    <button class="black_friday-btn" id="blackFridayBtn">Bora lá</button>
+  </div>
+</div>
+
+</body>
+</html>
