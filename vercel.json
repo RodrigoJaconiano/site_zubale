@@ -1,5 +1,4 @@
 {
-  "kv": true,
   "routes": [
     { "src": "/k", "dest": "/k.html" },
     { "src": "/acc", "dest": "/acc.html" },
