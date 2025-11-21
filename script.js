@@ -231,10 +231,8 @@ async function loadAndPrepareData(forceReload=false){
     const turno = findField(row, ["Turno","turno"]) || (row.__cells && row.__cells[2]) || "";
     const link = findField(row, ["Link SquareSpace","Link"]) || (row.__cells && row.__cells[3]) || "";
     const imgOk = findField(row, ["Imagem Preenchida corretamente?","Imagem"]) || (row.__cells && row.__cells[5]) || "";
-    // --- ADIÇÃO: tentar extrair Estado (coluna J -> index 9) com chaves alternativas ---
-    const estado = findField(row, ["Estado","UF","uf","estado","Estado/UF","Unidade da Federação","Unidade da Federacao"]) || (row.__cells && row.__cells[9]) || "";
-    // --- ADIÇÃO: tentar extrair Cidade (coluna K -> index 10) com chaves alternativas ---
-    const cidade = findField(row, ["Cidade","cidade","City","city","Municipio","Município"]) || (row.__cells && row.__cells[10]) || "";
+    const estado = row.__cells?.[9] ?? "";
+    const cidade = row.__cells?.[10] ?? "";
     const { lat, lng } = extractLatLngFromRow(row);
     const dateObj = parseDatePreferDDMM(diaRaw);
     return {
