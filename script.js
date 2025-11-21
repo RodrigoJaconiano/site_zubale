@@ -60,7 +60,8 @@ const lojaImagesMap = {
   roldao: "images/Foto Roldão.png",
   paguemenosbr: "images/Foto PagueMenosBR.png",
   boa: "images/Foto BOA Supermercados.png",
-  "99": "images/Foto 99.png"
+  "99": "images/Foto 99.png",
+  assai: "images/Foto AssaiAtacadista.png",
 };
 function getLojaImage(nome){
   const ln = normalize(nome||"");
