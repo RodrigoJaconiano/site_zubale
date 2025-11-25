@@ -10,7 +10,7 @@ const PUB_ID = "2PACX-1vQBDKbeXYi4xycW9bnnOoXLByemROrrE9-wW0gMS-yuKMl67PrYRN78Jy
 const CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?output=csv`;
 const CACHE_KEY = "agenda_allData_v1";
 const CACHE_TIME_KEY = "agenda_allData_time_v1";
-const CACHE_TTL_MS = 1000 * 60 * 30; // 30 min
+const CACHE_TTL_MS = 1000 * 60 * 10; // 10 min
 
 let allData = [];
 let userCoords = null;
