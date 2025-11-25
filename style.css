@@ -222,6 +222,7 @@ select {
   margin-left: 6px;
   padding: 8px 12px;
   border-radius: 10px;
+  position: relative !important;
   border: 2px solid var(--primary);
   background: var(--primary);
   color: #fff;
@@ -230,6 +231,7 @@ select {
   font-weight: 600;
   transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
   box-shadow: 0 6px 18px rgba(0,123,255,0.14);
+  z-index: 10;
 }
 .filters-toggle:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,123,255,0.18); }
 .filters-toggle:focus { outline: none; box-shadow: 0 0 12px rgba(0,123,255,0.28); }
@@ -237,7 +239,7 @@ select {
 /* painel de checkboxes (dinâmico) */
 .checkbox-filters {
   position: absolute;
-  top: calc(100% + 10px);
+  top: 100%;
   left: 0;
   width: 360px;
   max-height: 320px;
@@ -246,9 +248,10 @@ select {
   border-radius: 10px;
   padding: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-  display: none; /* shown only with .open class */
+  display: none;
   z-index: 1000;
 }
+
 .checkbox-filters.open {
   display: block;
 }

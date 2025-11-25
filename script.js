@@ -386,7 +386,7 @@ function populateFilter(){
   header.style.alignItems = "center";
   header.style.marginBottom = "8px";
   const hw = document.createElement("div");
-  hw.textContent = "Filtros";
+  hw.textContent = "";
   hw.style.fontWeight = "700";
   header.appendChild(hw);
   chkContainer.appendChild(header);
@@ -452,8 +452,8 @@ function populateFilter(){
   }
 
   const lojasGroup = makeGroup("Lojas","lojasFiltersContainer");
-  const estadosGroup = makeGroup("Estados","estadosFiltersContainer");
-  const cidadesGroup = makeGroup("Cidades","cidadesFiltersContainer");
+  const estadosGroup = makeGroup("Cidades","estadosFiltersContainer");
+  const cidadesGroup = makeGroup("Estados","cidadesFiltersContainer");
 
   groupsWrap.appendChild(lojasGroup.col);
   groupsWrap.appendChild(estadosGroup.col);
