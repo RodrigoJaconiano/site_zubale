@@ -1,10 +1,6 @@
 /* script.js — integrado: CSV/JSON fetch, cache, geoloc, parse robusto, filtros por checkbox + select,
    seleção de cards (toggle), e melhorias responsivas/UX
-   Atualizado: extração de lat/lng mais robusta e meLocalize sem alerts;
-   ordenação por distância quando há coords + ADIÇÃO: filtro por Estados (coluna J) e Cidades (coluna K)
-   e labels visíveis para Lojas, Estado e Cidade.
-*/
-
+   Atualizado: correções para mostrar ESTADO — CIDADE e normalização/agrupamento de lojas */
 const JSON_URL = "https://script.google.com/macros/s/AKfycbxIchf_yVY28y0TQxA0tc6ygi4Axcmcsg2CoW-aTMypersUjvH5u4Kp0I62Y7T5DpEg/exec";
 const PUB_ID = "2PACX-1vQBDKbeXYi4xycW9bnnOoXLByemROrrE9-wW0gMS-yuKMl67PrYRN78Jy239cDsslh6iP8tgj_rV9nZ";
 const CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?output=csv`;
@@ -17,7 +13,33 @@ let userCoords = null;
 let lastRender = { userLat: null, userLng: null };
 
 const $ = id => document.getElementById(id);
+
+// normalize base (lowercase, remove diacritics, remove spaces/underscores/hyphens)
+// usado internamente para chaves e comparações
 const normalize = s => (s ?? "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[\s\-_]/g,"");
+
+// remove diacríticos mas preserva espaços — útil para exibicão sem acento
+function removeDiacriticsKeepSpaces(s){
+  return (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function capitalizeFirst(s){
+  if(!s) return "";
+  return s[0].toUpperCase() + s.slice(1).toLowerCase();
+}
+// pega primeiro token (palavra) do nome, sem diacríticos, lowercased — usado como key de loja
+function firstTokenKey(s){
+  if(!s) return "";
+  const first = String(s).trim().split(/\s+/)[0] || "";
+  // normalize for key (remove accents, lowercase, remove non-alnum)
+  return removeDiacriticsKeepSpaces(first).toLowerCase().replace(/[^\w]/g,"");
+}
+// display-friendly first token (sem acento, Title Case)
+function firstTokenLabel(s){
+  if(!s) return "";
+  const first = String(s).trim().split(/\s+/)[0] || "";
+  const noAccent = removeDiacriticsKeepSpaces(first).replace(/[^\w\s]/g,"");
+  return capitalizeFirst(noAccent);
+}
 
 /* ---------- UTIL: formatar distância em pt-BR ---------- */
 function formatDistanceBr(km){
@@ -232,13 +254,15 @@ async function loadAndPrepareData(forceReload=false){
     const turno = findField(row, ["Turno","turno"]) || (row.__cells && row.__cells[2]) || "";
     const link = findField(row, ["Link SquareSpace","Link"]) || (row.__cells && row.__cells[3]) || "";
     const imgOk = findField(row, ["Imagem Preenchida corretamente?","Imagem"]) || (row.__cells && row.__cells[5]) || "";
+    // CORREÇÃO CRÍTICA: coluna J (index 9) = ESTADO; coluna K (index 10) = CIDADE
     const estado = row.__cells?.[9] ?? "";
     const cidade = row.__cells?.[10] ?? "";
     const { lat, lng } = extractLatLngFromRow(row);
     const dateObj = parseDatePreferDDMM(diaRaw);
+    const nomeStr = String(nome).trim();
     return {
       raw: row,
-      nome: String(nome).trim(),
+      nome: nomeStr,
       turno,
       link,
       imgOk,
@@ -246,7 +270,8 @@ async function loadAndPrepareData(forceReload=false){
       lng: isFinite(lng) ? Number(lng) : NaN,
       dateObj,
       estado: String(estado).trim(),
-      cidade: String(cidade).trim()
+      cidade: String(cidade).trim(),
+      lojaKey: firstTokenKey(nomeStr) // chave simplificada para agrupar lojas
     };
   });
 
@@ -275,21 +300,15 @@ function setFeedback(msg){
 }
 
 // ----- Segurança: handler central para mudanças de filtro -----
-// Usa lastRender atual para preservar estado de localização quando aplicável.
-// IMPORTANT: NADA de geolocalização aqui — só re-render dos cards.
-// ----- SeguranÃ§a: handler central para mudanÃ§as de filtro -----
 function handleFilterChange() {
   try {
-    // MUDANÃ‡A CRÃTICA: Chamamos renderCards SEM NENHUM ARGUMENTO.
-    // A funÃ§Ã£o renderCards agora Ã© inteligente o suficiente para saber se deve ou nÃ£o usar a localizaÃ§Ã£o.
     renderCards();
   } catch (err) {
     console.warn("handleFilterChange erro:", err);
   }
 }
 
-
-/* FILTER UI (REFATORADO: painel com 3 grupos de checkboxes — lojas, estados, cidades lado a lado) */
+/* FILTER UI (painel com 3 grupos: lojas, estados, cidades) */
 function ensureLabelFor(element, text){
   if (!element || !element.id) return null;
   const prev = element.previousElementSibling;
@@ -313,17 +332,17 @@ function createCheckbox(id, value, labelText, name){
   wrapper.style.width = "100%";
   wrapper.style.boxSizing = "border-box";
   wrapper.style.display = "flex";
-  wrapper.style.alignItems = "flex-start"; // permite mÃºltiplas linhas no label
+  wrapper.style.alignItems = "flex-start";
   wrapper.style.gap = "8px";
   wrapper.style.padding = "6px 10px";
   wrapper.style.borderRadius = "6px";
   wrapper.style.cursor = "pointer";
-  wrapper.style.minWidth = "0"; // ESSENCIAL para evitar que o item force overflow horizontal
+  wrapper.style.minWidth = "0";
 
   const input = document.createElement("input");
   input.type = "checkbox";
   input.id = id;
-  input.value = value;
+  input.value = value; // valor usado internamente como key (já normalizado quando necessário)
   input.name = name;
   input.className = "filter-checkbox";
   input.style.flex = "0 0 auto";
@@ -333,12 +352,11 @@ function createCheckbox(id, value, labelText, name){
   label.htmlFor = id;
   label.textContent = labelText;
 
-  // estilos que permitem quebra apenas em espaÃ§os (nÃ£o cortam palavras)
   label.style.display = "block";
   label.style.flex = "1 1 auto";
-  label.style.whiteSpace = "normal";      // qubra em espaÃ§os
-  label.style.wordBreak = "normal";       // nÃ£o quebra palavras no meio
-  label.style.overflowWrap = "break-word";// quebra apenas se for uma "palavra" gigante sem espaÃ§os
+  label.style.whiteSpace = "normal";
+  label.style.wordBreak = "normal";
+  label.style.overflowWrap = "break-word";
   label.style.hyphens = "none";
   label.style.lineHeight = "1.2";
   label.style.margin = "0";
@@ -350,16 +368,11 @@ function createCheckbox(id, value, labelText, name){
     e.stopPropagation(); 
     if (e.target === input) return;
     input.checked = !input.checked;
-    // Apenas dispara o evento 'change'. O listener do prÃ³prio input vai chamar a funÃ§Ã£o de renderizar.
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    // A linha "handleFilterChange()" foi REMOVIDA daqui para evitar a chamada dupla.
   });
 
   return { wrapper, input, label };
 }
-
-
-
 
 function populateFilter(){
   const sel = $("lojaFilter");
@@ -367,8 +380,8 @@ function populateFilter(){
   if(!chkContainer) return;
 
   if (sel) sel.style.display = "none";
-  let estadoSel = $("estadoFilter"); if (estadoSel) estadoSel.style.display = "none";
   let cidadeSel = $("cidadeFilter"); if (cidadeSel) cidadeSel.style.display = "none";
+  let estadoSel = $("estadoFilter"); if (estadoSel) estadoSel.style.display = "none";
 
   // limpar e preparar container
   chkContainer.innerHTML = "";
@@ -405,7 +418,7 @@ function populateFilter(){
     if (sel) sel.value = "Todas";
     if (estadoSel) estadoSel.value = "Todas";
     if (cidadeSel) cidadeSel.value = "Todas";
-    handleFilterChange(); // <-- MUDANÃ‡A: Usando a funÃ§Ã£o segura aqui tambÃ©m
+    handleFilterChange();
   });
 
   const groupsWrap = document.createElement("div");
@@ -451,38 +464,65 @@ function populateFilter(){
     return { col, list };
   }
 
-  const lojasGroup = makeGroup("Lojas","lojasFiltersContainer");
+  // ORDEM CORRIGIDA: Lojas | Estados | Cidades
+  const lojasGroup = makeGroup("Redes","lojasFiltersContainer");
   const estadosGroup = makeGroup("Cidades","estadosFiltersContainer");
   const cidadesGroup = makeGroup("Estados","cidadesFiltersContainer");
 
   groupsWrap.appendChild(lojasGroup.col);
   groupsWrap.appendChild(estadosGroup.col);
   groupsWrap.appendChild(cidadesGroup.col);
+
   chkContainer.appendChild(groupsWrap);
 
-  const names = [...new Set(allData.map(d => d.nome))].sort((a,b)=> a.localeCompare(b,'pt-BR'));
-  const states = [...new Set(allData.map(d => (d.estado || "").trim()).filter(Boolean))].sort((a,b)=> a.localeCompare(b,'pt-BR'));
-  const cities = [...new Set(allData.map(d => (d.cidade || "").trim()).filter(Boolean))].sort((a,b)=> a.localeCompare(b,'pt-BR'));
+  // --- construir mapas normalizados para remover duplicatas por case/acento ---
+  const lojaMap = new Map(); // key -> label
+  const stateMap = new Map(); // normalize(state) -> first observed display state
+  const cityMap = new Map(); // normalize(city) -> first observed display city
 
-  for (const n of names){
-    const id = "chk_loja_" + normalize(n).replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, n, n, "loja");
+  for (const d of allData){
+    // lojas: chave simplificada (primeira palavra sem acento)
+    const key = d.lojaKey || firstTokenKey(d.nome || "");
+    if (key && !lojaMap.has(key)){
+      lojaMap.set(key, firstTokenLabel(d.nome || ""));
+    }
+    // estados
+    const s = String(d.estado || "").trim();
+    const sKey = normalize(s);
+    if (s && !stateMap.has(sKey)) stateMap.set(sKey, s);
+    // cidades
+    const c = String(d.cidade || "").trim();
+    const cKey = normalize(c);
+    if (c && !cityMap.has(cKey)) cityMap.set(cKey, c);
+  }
+
+  // ordenar por label (pt-BR) antes de criar checkboxes
+  const lojaEntries = Array.from(lojaMap.entries()).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
+  const stateEntries = Array.from(stateMap.entries()).map(([k,v])=>[k,v]).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
+  const cityEntries = Array.from(cityMap.entries()).map(([k,v])=>[k,v]).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
+
+  // criar checkboxes de lojas (value = key)
+  for (const [key,labelText] of lojaEntries){
+    const id = "chk_loja_" + key.replace(/\W/g,"_");
+    const { wrapper, input } = createCheckbox(id, key, labelText, "loja"); // value é a key
     lojasGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange); // <-- MUDANÃ‡A: Simplificado e padronizado
+    input.addEventListener("change", handleFilterChange);
   }
 
-  for (const s of states){
-    const id = "chk_estado_" + normalize(s).replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, s, s, "estado");
+  // criar checkboxes de estados (value = normalized key)
+  for (const [k,display] of stateEntries){
+    const id = "chk_estado_" + k.replace(/\W/g,"_");
+    const { wrapper, input } = createCheckbox(id, k, display, "estado"); // value é normalized key
     estadosGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange); // <-- MUDANÃ‡A: Padronizado
+    input.addEventListener("change", handleFilterChange);
   }
 
-  for (const c of cities){
-    const id = "chk_cidade_" + normalize(c).replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, c, c, "cidade");
+  // criar checkboxes de cidades (value = normalized key)
+  for (const [k,display] of cityEntries){
+    const id = "chk_cidade_" + k.replace(/\W/g,"_");
+    const { wrapper, input } = createCheckbox(id, k, display, "cidade"); // value é normalized key
     cidadesGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange); // <-- MUDANÃ‡A: Padronizado
+    input.addEventListener("change", handleFilterChange);
   }
 
   const toggle = $("filtersToggle");
@@ -520,15 +560,11 @@ function populateFilter(){
   }
 }
 
-
 function closeFilterPanelIfOpen(){
   const toggle=$("filtersToggle");
   const panel=$("checkboxFilters");
   if(!panel) return;
-  if(!toggle){
-    // se não tem toggle, não fecha automaticamente
-    return;
-  }
+  if(!toggle) return;
   if(panel.classList.contains("open")){
     panel.classList.remove("open");
     panel.setAttribute("aria-hidden","true");
@@ -539,13 +575,9 @@ function closeFilterPanelIfOpen(){
 
 /* renderCards */
 function renderCards(userLat = undefined, userLng = undefined) {
-  // ATUALIZAÇÃO IMPORTANTE:
-  // Se novas coordenadas são passadas (ou seja, a função meLocalize foi chamada),
-  // nós atualizamos a variável global 'userCoords'.
   if (userLat !== undefined && userLng !== undefined && isFinite(Number(userLat)) && isFinite(Number(userLng))) {
     userCoords = { lat: Number(userLat), lon: Number(userLng) };
   }
-  // Daqui em diante, a função usará 'userCoords' como a única fonte de verdade para a localização.
 
   const container = $("container");
   if (!container) {
@@ -556,13 +588,13 @@ function renderCards(userLat = undefined, userLng = undefined) {
   container.innerHTML = "";
 
   // refs
-  const sel = $("lojaFilter"); // select legacy (hidden)
+  const sel = $("lojaFilter"); // legacy
   const chkContainer = $("checkboxFilters");
   const lojasContainer = document.getElementById("lojasFiltersContainer");
   const estadosContainer = document.getElementById("estadosFiltersContainer");
   const cidadesContainer = document.getElementById("cidadesFiltersContainer");
 
-  // --- pegar seleções efetivas (priorizar checkboxes) ---
+  // pegar seleções (valores são as KEYS normalizadas que setamos na populateFilter)
   let checkedLojas = [];
   if (lojasContainer) checkedLojas = Array.from(lojasContainer.querySelectorAll("input[type=checkbox]:checked")).map(i => i.value);
   const fallbackSelValue = sel ? (sel.value ?? "Todas") : "Todas";
@@ -577,18 +609,24 @@ function renderCards(userLat = undefined, userLng = undefined) {
   today.setHours(0, 0, 0, 0);
   let ordered = allData.slice();
 
+  // FILTRO LOJA (comparar com lojaKey)
   if (checkedLojas.length) {
-    const set = new Set(checkedLojas.map(s => normalize(s)));
-    ordered = ordered.filter(d => set.has(normalize(d.nome)));
+    const set = new Set(checkedLojas); // values already keys
+    ordered = ordered.filter(d => set.has(d.lojaKey));
   } else if (filterValue && filterValue !== "Todas") {
+    // legacy: if select used, comparar pelo nome completo (normalizado)
     ordered = ordered.filter(d => normalize(d.nome) === normalize(filterValue));
   }
+
+  // FILTRO ESTADO (values são normalized keys)
   if (estadoHasAny) {
-    const setE = new Set(checkedEstados.map(s => normalize(s)));
+    const setE = new Set(checkedEstados.map(s => String(s)));
     ordered = ordered.filter(d => setE.has(normalize(d.estado || "")));
   }
+
+  // FILTRO CIDADE (values são normalized keys)
   if (cidadeHasAny) {
-    const setC = new Set(checkedCidades.map(s => normalize(s)));
+    const setC = new Set(checkedCidades.map(s => String(s)));
     ordered = ordered.filter(d => setC.has(normalize(d.cidade || "")));
   }
 
@@ -597,8 +635,7 @@ function renderCards(userLat = undefined, userLng = undefined) {
     return;
   } else setFeedback("");
 
-  // --- LÓGICA DE ORDENAÇÃO CORRIGIDA ---
-  // A ordenação por distância só acontece se a variável global 'userCoords' tiver sido definida (pelo botão "Me Localize").
+  // ordenação por distância (se userCoords definido)
   const hasActiveLocation = userCoords && isFinite(userCoords.lat) && isFinite(userCoords.lon);
 
   if (hasActiveLocation) {
@@ -606,15 +643,12 @@ function renderCards(userLat = undefined, userLng = undefined) {
     const past = ordered.filter(d => !(d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today));
     const futureWithDist = future.map(d => {
       const hasCoords = isFinite(d.lat) && isFinite(d.lng);
-      // Usa 'userCoords' para o cálculo
       const dist = hasCoords ? distanceKm(userCoords.lat, userCoords.lon, d.lat, d.lng) : Infinity;
       return { ...d, __dist: (isFinite(dist) ? Number(dist) : Infinity), __hasCoords: hasCoords };
     }).sort((a, b) => { return (a.__dist || Infinity) - (b.__dist || Infinity); });
     const pastMapped = past.map(d => ({ ...d, __dist: null, __hasCoords: isFinite(d.lat) && isFinite(d.lng) }));
     ordered = futureWithDist.concat(pastMapped);
   } else {
-    // Se não houver localização ativa, os dados já estão ordenados por data.
-    // Apenas garantimos que as propriedades extras existam para a renderização.
     ordered = ordered.map(d => ({ ...d, __dist: null, __hasCoords: isFinite(d.lat) && isFinite(d.lng) }));
   }
 
@@ -626,7 +660,8 @@ function renderCards(userLat = undefined, userLng = undefined) {
     const card = document.createElement("article");
     card.className = "card" + (isRecentPast ? " past" : "");
     card.setAttribute("tabindex", "0");
-    card.dataset.loja = d.nome;
+    // dataset.loja agora guarda a chave simplificada
+    card.dataset.loja = d.lojaKey || normalize(d.nome);
     if (d.link) {
       card.style.cursor = "pointer";
       card.addEventListener("click", ev => {
@@ -652,7 +687,6 @@ function renderCards(userLat = undefined, userLng = undefined) {
     nameNode.textContent = d.nome;
     title.appendChild(nameNode);
 
-    // A exibição da distância também depende da localização ativa
     if (hasActiveLocation && d.__hasCoords && isFinite(d.__dist)) {
       const strong = document.createElement("strong");
       strong.style.marginLeft = "8px";
@@ -682,11 +716,12 @@ function renderCards(userLat = undefined, userLng = undefined) {
       body.appendChild(dd);
     }
 
+    // META: ordem ESTADO — CIDADE (CORRIGIDO)
     const meta = document.createElement("div");
     meta.className = "card-meta";
     const partes = [];
-    if (d.cidade) partes.push(d.cidade);
     if (d.estado) partes.push(d.estado);
+    if (d.cidade) partes.push(d.cidade);
     if (partes.length) meta.textContent = partes.join(" — ");
     if (meta.textContent) body.appendChild(meta);
 
@@ -754,7 +789,7 @@ async function meLocalize(){
       if(isFinite(dist) && dist < minD){ minD = dist; nearest = d; }
     }
 
-    // reset filtros (mas manter seleção de estado/cidade? aqui mantemos estado/cidade em "Todas" como pedido)
+    // reset filtros
     const sel=$("lojaFilter");
     const chkContainer=$("checkboxFilters");
     const estadoSel=$("estadoFilter");
@@ -771,7 +806,7 @@ async function meLocalize(){
       if(container){
         const cards=container.querySelectorAll(".card");
         for(const c of cards){
-          if(normalize(c.dataset.loja||"")===normalize(nearest.nome)){ c.classList.add("nearest"); }
+          if((c.dataset.loja||"") === (nearest.lojaKey || "")){ c.classList.add("nearest"); }
           else { c.classList.remove("nearest"); }
         }
       }
@@ -828,41 +863,31 @@ if (document.readyState === "loading") {
 
 const logo = document.querySelector(".main-header .logo img");
 
-
-
-
-// === BLACK FRIDAY POPUP ===
+/* POPUP / CARROSSEL / registro de página (mantive iguais) */
 window.addEventListener('load', () => {
   const popup = document.getElementById('blackFridayPopup');
   const closeBtn = document.getElementById('blackFridayClose');
   const boraBtn = document.getElementById('blackFridayBtn');
-
-  function closePopup() {
-    popup.style.display = 'none';
-  }
-
-  closeBtn.addEventListener('click', closePopup);
-  boraBtn.addEventListener('click', closePopup);
+  if (!popup) return;
+  function closePopup() { popup.style.display = 'none'; }
+  if (closeBtn) closeBtn.addEventListener('click', closePopup);
+  if (boraBtn) boraBtn.addEventListener('click', closePopup);
 });
 
-// === CARROSSEL ===
 let index = 0;
 const slides = document.querySelectorAll(".black_friday-slide");
-
 function showSlide(i) {
+  if(!slides || !slides.length) return;
   slides.forEach(s => s.classList.remove("active"));
   slides[i].classList.add("active");
 }
-
 function nextSlide() {
   index = (index + 1) % slides.length;
   showSlide(index);
 }
-
-// troca a cada 3 segundos
-setInterval(nextSlide, 5000);
-
-// mostra o primeiro ao carregar
-showSlide(index);
+if (slides && slides.length) {
+  setInterval(nextSlide, 5000);
+  showSlide(index);
+}
 
 fetch(`/api/registrar?pagina=${window.location.pathname.replace('/', '') || 'index'}`);
