@@ -84,6 +84,8 @@ const lojaImagesMap = {
   boa: "images/Foto BOA Supermercados.png",
   "99": "images/Foto 99.png",
   assai: "images/Foto AssaiAtacadista.png",
+  barbosa: "images/Foto barbosa.png",
+
 };
 function getLojaImage(nome){
   const ln = normalize(nome||"");
@@ -763,7 +765,110 @@ async function fetchIpFallback(){
   return null;
 }
 
-/* ---------- meLocalize corrigido ---------- */
+/* ---------- Helpers novos MINIMOS (mantêm nomes existentes) ---------- */
+// Calcula e anexa __dist em allData (in-place). Garante que itens sem coords recebam Infinity.
+function computeDistancesForAllData(lat, lon){
+  const today = new Date(); today.setHours(0,0,0,0);
+  if(!Array.isArray(allData)) return;
+  for(const d of allData){
+    try{
+      if(d && d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today && isFinite(d.lat) && isFinite(d.lng)){
+        d.__dist = distanceKm(lat, lon, d.lat, d.lng);
+      } else {
+        d.__dist = Infinity;
+      }
+    } catch(e){
+      d.__dist = Infinity;
+    }
+  }
+}
+// Reordena os elementos DOM dentro do #container com base em allData.__dist.
+// Usa dataset.loja em cada card para relacionar com a entrada de allData.
+// Se não encontrar correspondência, deixa no final.
+function reorderDomCardsByAllDataDist(){
+  const container = $("container");
+  if(!container) return;
+  const cards = Array.from(container.querySelectorAll(".card"));
+  if(!cards.length) return;
+
+  // mapa lojaKey -> dist
+  const distMap = new Map();
+  for(const d of allData){
+    const key = (d.lojaKey || d.loja || d.name || d.nome || "").toString();
+    distMap.set(key, (isFinite(d.__dist) ? d.__dist : Infinity));
+  }
+
+  // comparator- get distance by card dataset.loja or fallback Infinity
+  cards.sort((a,b)=>{
+    const ka = (a.dataset.loja || a.getAttribute("data-loja") || "").toString();
+    const kb = (b.dataset.loja || b.getAttribute("data-loja") || "").toString();
+    const da = distMap.has(ka) ? distMap.get(ka) : parseFloat(a.dataset.distance || Infinity);
+    const db = distMap.has(kb) ? distMap.get(kb) : parseFloat(b.dataset.distance || Infinity);
+    return (isFinite(da) ? da : Infinity) - (isFinite(db) ? db : Infinity);
+  });
+
+  // reappend in sorted order
+  for(const c of cards){
+    container.appendChild(c);
+  }
+}
+// Atualiza texto/atributo de distância dentro de cada card após cálculo (vários seletores)
+function updateCardDistancesFromAllData(lat, lon){
+  const container = $("container");
+  if(!container) return;
+  const cards = container.querySelectorAll(".card");
+  for(const c of cards){
+    // find card's loja key
+    const lojaKey = (c.dataset.loja || c.getAttribute("data-loja") || "").toString();
+    // find corresponding allData item
+    let match = null;
+    if(lojaKey){
+      match = allData.find(d => ((d.lojaKey||d.loja||d.nome||d.name||"")+"") === lojaKey);
+    }
+    // fallback: try to read lat/lng from the card attributes
+    let cardLat = NaN, cardLon = NaN;
+    if(match && isFinite(match.__dist)){
+      // use match.__dist directly
+      const dist = match.__dist;
+      writeDistanceToCard(c, dist);
+      c.dataset.distance = String(dist);
+      continue;
+    } else {
+      // attempt to read coords from dataset/attrs
+      cardLat = parseFloat(c.dataset.lat ?? c.getAttribute("data-lat") ?? c.getAttribute("data-latitude"));
+      cardLon = parseFloat(c.dataset.lng ?? c.getAttribute("data-lng") ?? c.getAttribute("data-longitude") ?? c.getAttribute("data-lon"));
+      if(isFinite(cardLat) && isFinite(cardLon)){
+        const dist = distanceKm(lat, lon, cardLat, cardLon);
+        writeDistanceToCard(c, dist);
+        c.dataset.distance = String(dist);
+        continue;
+      }
+    }
+    // if nothing, set attribute to Infinity so it goes to the bottom
+    c.dataset.distance = String(Infinity);
+  }
+}
+// util: escreve string formatada da distância no card procurando elementos comuns
+function writeDistanceToCard(cardEl, dist){
+  const formatted = (typeof formatDistanceBr === "function") ? formatDistanceBr(dist) : (Math.round(dist*10)/10) + " km";
+  const distEl = cardEl.querySelector(".distance, .card-distance, .dist, [data-distance]");
+  if(distEl){
+    try { distEl.textContent = formatted; } catch(e){ cardEl.setAttribute("data-distance", String(dist)); }
+  } else {
+    // tenta inserir no topo como fallback (não quebra layout se não for necessário)
+    try {
+      const meta = cardEl.querySelector(".meta") || cardEl;
+      const span = document.createElement("span");
+      span.className = "card-distance auto-inserted";
+      span.textContent = formatted;
+      meta.appendChild(span);
+    } catch(e){
+      // ignore
+    }
+  }
+}
+
+/* ---------- meLocalize corrigido (agora 100% determinístico: calcular -> ordenar -> render -> reorder/update) ---------- */
 let meLocalizeRunning = false;
 async function meLocalize(){
   if(meLocalizeRunning) return;
@@ -779,17 +884,25 @@ async function meLocalize(){
     setFeedback("Obtendo sua localização…");
     let coords;
     try { coords = await obtainPositionStrategy(); } catch(err){ throw err; }
-    userCoords = { lat: Number(coords.lat), lon: Number(coords.lon) };
-    const today = new Date(); today.setHours(0,0,0,0);
-    const validEvents = allData.filter(d => { return d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today && isFinite(d.lat) && isFinite(d.lng); });
 
-    let nearest = null; let minD = Infinity;
-    for(const d of validEvents){
-      const dist = distanceKm(userCoords.lat, userCoords.lon, d.lat, d.lng);
-      if(isFinite(dist) && dist < minD){ minD = dist; nearest = d; }
+    // define coords globais
+    userCoords = { lat: Number(coords.lat), lon: Number(coords.lon) };
+
+    // 1) Calcular distâncias para ALLDATA (in-place)
+    computeDistancesForAllData(userCoords.lat, userCoords.lon);
+
+    // 2) Ordenar allData por distância (itens sem coords vão pro fim)
+    try{
+      allData.sort((a,b)=>{
+        const da = (isFinite(a.__dist) ? a.__dist : Infinity);
+        const db = (isFinite(b.__dist) ? b.__dist : Infinity);
+        return da - db;
+      });
+    } catch(e){
+      console.warn("Erro ao ordenar allData:", e);
     }
 
-    // reset filtros
+    // 3) Reset filtros antes do render (como você já fazia)
     const sel=$("lojaFilter");
     const chkContainer=$("checkboxFilters");
     const estadoSel=$("estadoFilter");
@@ -799,9 +912,24 @@ async function meLocalize(){
     if(estadoSel) estadoSel.value = "Todas";
     if(cidadeSel) cidadeSel.value = "Todas";
     closeFilterPanelIfOpen();
-    renderCards(userCoords.lat, userCoords.lon);
 
+    // 4) Renderizar SOMENTE APÓS termos calculado e ordenado allData
+    // Se renderCards retornar promise, await; se não, Promise.resolve faz o trabalho.
+    await Promise.resolve(renderCards(userCoords.lat, userCoords.lon));
+
+    // 5) Force repaint / garantir DOM atualizado
+    await new Promise(r => requestAnimationFrame(r));
+
+    // 6) Atualizar os textos de distância nos cards (baseado em allData.__dist ou atributos do card)
+    updateCardDistancesFromAllData(userCoords.lat, userCoords.lon);
+
+    // 7) Reordenar DOM dos cards conforme allData.__dist (garante posição correta mesmo se renderCards não respeitou ordem)
+    reorderDomCardsByAllDataDist();
+
+    // 8) calcular nearest e exibir feedback
+    const nearest = allData.find(d => isFinite(d.__dist) && d.__dist !== Infinity) || null;
     if(nearest){
+      const minD = nearest.__dist;
       const container=$("container");
       if(container){
         const cards=container.querySelectorAll(".card");
@@ -814,12 +942,27 @@ async function meLocalize(){
     } else {
       setFeedback("Localização obtida — nenhuma loja futura encontrada com coordenadas.");
     }
+
   } catch(err){
     console.warn("meLocalize error:",err);
     try {
       if(err && (err.code===3||err.code===2||err.message==="Timeout externo")){
         const ipCoords = await fetchIpFallback();
-        if(ipCoords){ userCoords = {lat: ipCoords.lat, lon: ipCoords.lon}; renderCards(userCoords.lat, userCoords.lon); setFeedback("Localização aproximada por IP obtida — distâncias atualizadas."); return; }
+        if(ipCoords){
+          userCoords = {lat: ipCoords.lat, lon: ipCoords.lon};
+
+          // repetir o pipeline com coords por IP
+          computeDistancesForAllData(userCoords.lat, userCoords.lon);
+          try{ allData.sort((a,b)=>{ const da=isFinite(a.__dist)?a.__dist:Infinity; const db=isFinite(b.__dist)?b.__dist:Infinity; return da-db; }); } catch(e){ console.warn("Ordenação fallback falhou:", e); }
+
+          await Promise.resolve(renderCards(userCoords.lat, userCoords.lon));
+          await new Promise(r => requestAnimationFrame(r));
+          updateCardDistancesFromAllData(userCoords.lat, userCoords.lon);
+          reorderDomCardsByAllDataDist();
+
+          setFeedback("Localização aproximada por IP obtida — distâncias atualizadas.");
+          return;
+        }
       }
     } catch(e){ console.warn("IP fallback error:", e); }
     if(err && err.code===1){ setFeedback("Permissão de localização negada. Habilite nas configurações do site."); return; }
@@ -860,6 +1003,7 @@ if (document.readyState === "loading") {
 } else {
   init().catch(err=>console.error("init error:",err));
 }
+
 
 const logo = document.querySelector(".main-header .logo img");
 
