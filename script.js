@@ -4,8 +4,8 @@
 const JSON_URL = "https://script.google.com/macros/s/AKfycbxIchf_yVY28y0TQxA0tc6ygi4Axcmcsg2CoW-aTMypersUjvH5u4Kp0I62Y7T5DpEg/exec";
 const PUB_ID = "2PACX-1vQBDKbeXYi4xycW9bnnOoXLByemROrrE9-wW0gMS-yuKMl67PrYRN78Jy239cDsslh6iP8tgj_rV9nZ";
 const CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?output=csv`;
-const CACHE_KEY = "agenda_allData_v2";
-const CACHE_TIME_KEY = "agenda_allData_time_v2";
+const CACHE_KEY = "agenda_allData_v1";
+const CACHE_TIME_KEY = "agenda_allData_time_v1";
 const CACHE_TTL_MS = 1000 * 60 * 3; // 3 min
 
 let allData = [];
