@@ -85,6 +85,7 @@ const lojaImagesMap = {
   "99": "images/Foto 99.png",
   assai: "images/Foto AssaiAtacadista.png",
   barbosa: "images/Foto barbosa.png",
+  sonda: "images/Foto Sonda.png",
 
 };
 function getLojaImage(nome){
