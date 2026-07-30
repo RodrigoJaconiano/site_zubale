@@ -1,336 +1,1650 @@
-/* script.js — integrado: CSV/JSON fetch, cache, geoloc, parse robusto, filtros por checkbox + select,
-   seleção de cards (toggle), e melhorias responsivas/UX
-   Atualizado: correções para mostrar ESTADO — CIDADE e normalização/agrupamento de lojas */
-const JSON_URL = "https://script.google.com/macros/s/AKfycbxIchf_yVY28y0TQxA0tc6ygi4Axcmcsg2CoW-aTMypersUjvH5u4Kp0I62Y7T5DpEg/exec";
-const PUB_ID = "2PACX-1vQBDKbeXYi4xycW9bnnOoXLByemROrrE9-wW0gMS-yuKMl67PrYRN78Jy239cDsslh6iP8tgj_rV9nZ";
-const CSV_URL = `https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?output=csv`;
-const CACHE_KEY = "agenda_allData_v1";
-const CACHE_TIME_KEY = "agenda_allData_time_v1";
-const CACHE_TTL_MS = 1000 * 60 * 3; // 3 min
+/* script.js — integrado: CSV/JSON fetch, cache, geolocalização, filtros e cards.
+   Revisão 2026-07-30: remapeamento robusto de imagens, fallback sequencial,
+   correção do cache de datas, filtros Estado/Cidade e listeners duplicados. */
+
+const JSON_URL =
+  "https://script.google.com/macros/s/AKfycbxIchf_yVY28y0TQxA0tc6ygi4Axcmcsg2CoW-aTMypersUjvH5u4Kp0I62Y7T5DpEg/exec";
+
+const PUB_ID =
+  "2PACX-1vQBDKbeXYi4xycW9bnnOoXLByemROrrE9-wW0gMS-yuKMl67PrYRN78Jy239cDsslh6iP8tgj_rV9nZ";
+
+const CSV_URL =
+  `https://docs.google.com/spreadsheets/d/e/${PUB_ID}/pub?output=csv`;
+
+const CACHE_KEY = "agenda_allData_v2";
+const CACHE_TIME_KEY = "agenda_allData_time_v2";
+const CACHE_TTL_MS = 1000 * 60 * 3;
 
 let allData = [];
 let userCoords = null;
-let lastRender = { userLat: null, userLng: null };
+let lastRender = {
+  userLat: null,
+  userLng: null
+};
+
+let globalUiEventsBound = false;
 
 const $ = id => document.getElementById(id);
 
-// normalize base (lowercase, remove diacritics, remove spaces/underscores/hyphens)
-// usado internamente para chaves e comparações
-const normalize = s => (s ?? "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[\s\-_]/g,"");
+const normalize = value =>
+  (value ?? "")
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s\-_]/g, "");
 
-// remove diacríticos mas preserva espaços — útil para exibicão sem acento
-function removeDiacriticsKeepSpaces(s){
-  return (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+function removeDiacriticsKeepSpaces(value) {
+  return (value ?? "")
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
-function capitalizeFirst(s){
-  if(!s) return "";
-  return s[0].toUpperCase() + s.slice(1).toLowerCase();
+
+function capitalizeFirst(value) {
+  if (!value) return "";
+
+  return value[0].toUpperCase() +
+    value.slice(1).toLowerCase();
 }
-// pega primeiro token (palavra) do nome, sem diacríticos, lowercased — usado como key de loja
-function firstTokenKey(s){
-  if(!s) return "";
-  const first = String(s).trim().split(/\s+/)[0] || "";
-  // normalize for key (remove accents, lowercase, remove non-alnum)
-  return removeDiacriticsKeepSpaces(first).toLowerCase().replace(/[^\w]/g,"");
+
+function firstTokenKey(value) {
+  if (!value) return "";
+
+  const first =
+    String(value).trim().split(/\s+/)[0] || "";
+
+  return removeDiacriticsKeepSpaces(first)
+    .toLowerCase()
+    .replace(/[^\w]/g, "");
 }
-// display-friendly first token (sem acento, Title Case)
-function firstTokenLabel(s){
-  if(!s) return "";
-  const first = String(s).trim().split(/\s+/)[0] || "";
-  const noAccent = removeDiacriticsKeepSpaces(first).replace(/[^\w\s]/g,"");
+
+function firstTokenLabel(value) {
+  if (!value) return "";
+
+  const first =
+    String(value).trim().split(/\s+/)[0] || "";
+
+  const noAccent =
+    removeDiacriticsKeepSpaces(first)
+      .replace(/[^\w\s]/g, "");
+
   return capitalizeFirst(noAccent);
 }
 
-/* ---------- UTIL: formatar distância em pt-BR ---------- */
-function formatDistanceBr(km){
+function formatDistanceBr(km) {
   if (!isFinite(km)) return "";
-  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(km);
+
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(km);
 }
 
-/* Haversine */
-function distanceKm(lat1, lon1, lat2, lon2){
-  if (![lat1,lon1,lat2,lon2].every(v => isFinite(Number(v)))) return NaN;
-  lat1 = Number(lat1); lon1 = Number(lon1); lat2 = Number(lat2); lon2 = Number(lon2);
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const values = [lat1, lon1, lat2, lon2];
+
+  if (!values.every(value => isFinite(Number(value)))) {
+    return NaN;
+  }
+
+  lat1 = Number(lat1);
+  lon1 = Number(lon1);
+  lat2 = Number(lat2);
+  lon2 = Number(lon2);
+
+  const earthRadiusKm = 6371;
+
+  const dLat =
+    (lat2 - lat1) * Math.PI / 180;
+
+  const dLon =
+    (lon2 - lon1) * Math.PI / 180;
+
+  const calculation =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+
+  return 2 *
+    earthRadiusKm *
+    Math.atan2(
+      Math.sqrt(calculation),
+      Math.sqrt(1 - calculation)
+    );
 }
 
-function formatDateBr(d){
-  if (!(d instanceof Date) || isNaN(d.getTime())) return "";
-  const dd = d.getDate().toString().padStart(2,'0');
-  const mm = (d.getMonth()+1).toString().padStart(2,'0');
-  const yy = d.getFullYear().toString().slice(-2);
-  return `${dd}/${mm}/${yy}`;
+function formatDateBr(date) {
+  if (
+    !(date instanceof Date) ||
+    isNaN(date.getTime())
+  ) {
+    return "";
+  }
+
+  const day =
+    date.getDate()
+      .toString()
+      .padStart(2, "0");
+
+  const month =
+    (date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0");
+
+  const year =
+    date.getFullYear()
+      .toString()
+      .slice(-2);
+
+  return `${day}/${month}/${year}`;
 }
 
-/* imagem lookup */
-const lojaImagesMap = {
-  atc: "images/Foto Atacadão.png",
-  sams: "images/Foto Sams.png",
-  crfo: "images/Foto Carrefour.png",
-  atk: "images/Foto Atakarejo.png",
-  coop: "images/Foto COOP.png",
-  gbarbosa: "images/Foto GBarbosa.png",
-  amg: "images/Foto Amigão.png",
-  prz: "images/Foto Prezunic.png",
-  mer: "images/Foto Mercantil.png",
-  dlt: "images/Foto Delta.png",
-  slg: "images/Foto SuperLagoa.png",
-  rol: "images/Foto Roldão.png",
-  paguemenosbr: "images/Foto PagueMenosBR.png",
-  boa: "images/Foto BOA Supermercados.png",
-  "99": "images/Foto 99.png",
-  asi: "images/Foto AssaiAtacadista.png",
-  barbosa: "images/Foto barbosa.png",
-  sonda: "images/Foto Sonda.png",
+/* =========================================================
+   IMAGENS DAS REDES
+   ========================================================= */
 
-};
-function getLojaImage(nome){
-  const ln = normalize(nome||"");
-  for (const k in lojaImagesMap) if (ln.includes(k)) return lojaImagesMap[k];
-  return "images/default.jpg";
+const DEFAULT_STORE_IMAGE =
+  "/images/default.jpg";
+
+/*
+  Cada rede pode ter vários nomes e abreviações.
+
+  O navegador tenta os arquivos na ordem declarada.
+  Se o primeiro não existir, tenta o segundo.
+  Se nenhum existir, usa default.jpg.
+*/
+
+const STORE_IMAGE_RULES = [
+  {
+    key: "atc",
+    tokens: [
+      "atc",
+      "atacadao"
+    ],
+    prefixes: [
+      "atacadao"
+    ],
+    files: [
+      "/images/Foto Atacadão.png",
+      "/images/atacadao.png"
+    ]
+  },
+
+  {
+    key: "sams",
+    tokens: [
+      "sams",
+      "sam"
+    ],
+    prefixes: [
+      "sams",
+      "samsclub"
+    ],
+    files: [
+      "/images/Foto Sams.png",
+      "/images/sams.png"
+    ]
+  },
+
+  {
+    key: "carrefour",
+    tokens: [
+      "crfo",
+      "carrefour",
+      "hiper"
+    ],
+    prefixes: [
+      "carrefour",
+      "hipercarrefour"
+    ],
+    files: [
+      "/images/Foto Carrefour.png",
+      "/images/carrefour.png"
+    ]
+  },
+
+  {
+    key: "atk",
+    tokens: [
+      "atk",
+      "atakarejo"
+    ],
+    prefixes: [
+      "atakarejo"
+    ],
+    files: [
+      "/images/Foto Atakarejo.png",
+      "/images/atakarejo.png"
+    ]
+  },
+
+  {
+    key: "dom",
+    tokens: [
+      "dom",
+    ],
+    prefixes: [
+      "dom"
+    ],
+    files: [
+      "/images/Foto Dom.png",
+      "/images/dom.png"
+    ]
+  },
+
+  {
+    key: "ner",
+    tokens: [
+      "ner",
+    ],
+    prefixes: [
+      "ner"
+    ],
+    files: [
+      "/images/Foto NER.png",
+      "/images/ner.png"
+    ]
+  },
+
+  {
+    key: "pri",
+    tokens: [
+      "pri",
+      "princesa",
+    ],
+    prefixes: [
+      "princesa"
+    ],
+    files: [
+      "/images/Foto Princesa.png",
+      "/images/princesa.png"
+    ]
+  },
+
+  {
+    key: "ner",
+    tokens: [
+      "ner",
+      "nova era",
+    ],
+    prefixes: [
+      "ner",
+      "novaera",
+    ],
+    files: [
+      "/images/novaera.png",
+      "/images/ner.png"
+    ]
+  },
+
+  {
+    key: "coop",
+    tokens: [
+      "coop"
+    ],
+    prefixes: [
+      "coop"
+    ],
+    files: [
+      "/images/Foto COOP.png",
+      "/images/coop.png"
+    ]
+  },
+
+  {
+    key: "gbarbosa",
+    tokens: [
+      "gbarbosa"
+    ],
+    prefixes: [
+      "gbarbosa"
+    ],
+    files: [
+      "/images/Foto GBarbosa.png",
+      "/images/gbarbosa.png"
+    ]
+  },
+
+  {
+    key: "amg",
+    tokens: [
+      "amg",
+      "amigao"
+    ],
+    prefixes: [
+      "amigao"
+    ],
+    files: [
+      "/images/Foto Amigão.png",
+      "/images/amigao.png"
+    ]
+  },
+
+  {
+    key: "prz",
+    tokens: [
+      "prz",
+      "prezunic"
+    ],
+    prefixes: [
+      "prezunic"
+    ],
+    files: [
+      "/images/Foto Prezunic.png",
+      "/images/prezunic.png"
+    ]
+  },
+
+  {
+    key: "mer",
+    tokens: [
+      "mer",
+      "mercantil"
+    ],
+    prefixes: [
+      "mercantil"
+    ],
+    files: [
+      "/images/Foto Mercantil.png",
+      "/images/mercantil.png"
+    ]
+  },
+
+  {
+    key: "dlt",
+    tokens: [
+      "dlt",
+      "delta"
+    ],
+    prefixes: [
+      "delta"
+    ],
+    files: [
+      "/images/delta.png",
+      "/images/Foto Delta.png"
+    ]
+  },
+
+  {
+    key: "des",
+    tokens: [
+      "des",
+      "desco"
+    ],
+    prefixes: [
+      "desco"
+    ],
+    files: [
+      "/images/desco.png",
+      "/images/Foto Desco.png"
+    ]
+  },
+
+
+  {
+    key: "andorinha",
+    tokens: [
+      "andorinha"
+    ],
+    prefixes: [
+      "andorinha"
+    ],
+    files: [
+      "/images/andorinha.png",
+      "/images/Foto Andorinha.png"
+    ]
+  },
+
+  {
+    key: "gig",
+    tokens: [
+      "gig"
+    ],
+    prefixes: [
+      "giga"
+    ],
+    files: [
+      "/images/giga.png",
+      "/images/Foto Giga.png"
+    ]
+  },
+
+  {
+    key: "slg",
+    tokens: [
+      "slg",
+      "superlagoa"
+    ],
+    prefixes: [
+      "superlagoa"
+    ],
+    files: [
+      "/images/Foto SuperLagoa.png",
+      "/images/super-lagoa.png",
+      "/images/superlagoa.png"
+    ]
+  },
+
+  {
+    key: "rol",
+    tokens: [
+      "rol",
+      "roldao"
+    ],
+    prefixes: [
+      "roldao"
+    ],
+    files: [
+      "/images/Foto Roldão.png",
+      "/images/roldao.png"
+    ]
+  },
+
+  {
+    key: "pgm",
+    tokens: [
+      "pgm",
+      "paguemenos",
+      "paguemenosbr"
+    ],
+    prefixes: [
+      "paguemenos",
+      "paguemenosbr"
+    ],
+    files: [
+      "/images/Foto PagueMenosBR.png",
+      "/images/pague-menos.png",
+      "/images/paguemenos.png"
+    ]
+  },
+
+  {
+    key: "boa",
+    tokens: [
+      "boa"
+    ],
+    prefixes: [
+      "boa"
+    ],
+    files: [
+      "/images/Foto BOA Supermercados.png",
+      "/images/boa.png"
+    ]
+  },
+
+  {
+    key: "99",
+    tokens: [
+      "99",
+      "99food"
+    ],
+    prefixes: [
+      "99",
+      "99food"
+    ],
+    files: [
+      "/images/Foto 99.png",
+      "/images/99.png"
+    ]
+  },
+
+  {
+    key: "asi",
+    tokens: [
+      "asi",
+      "assai"
+    ],
+    prefixes: [
+      "assai"
+    ],
+    files: [
+      "/images/Foto AssaiAtacadista.png",
+      "/images/assai.png"
+    ]
+  },
+
+  {
+    key: "barbosa",
+    tokens: [
+      "barbosa"
+    ],
+    prefixes: [
+      "barbosa"
+    ],
+    files: [
+      "/images/Foto barbosa.png",
+      "/images/barbosa.png"
+    ]
+  },
+
+  {
+    key: "sonda",
+    tokens: [
+      "sonda",
+      "sda"
+    ],
+    prefixes: [
+      "sonda"
+    ],
+    files: [
+      "/images/Foto Sonda.png",
+      "/images/sonda.png"
+    ]
+  },
+
+  {
+    key: "oba",
+    tokens: [
+      "oba"
+    ],
+    prefixes: [
+      "oba"
+    ],
+    files: [
+      "/images/Foto Oba.png",
+      "/images/oba.png"
+    ]
+  },
+
+  {
+    key: "goodbom",
+    tokens: [
+      "gob",
+      "goodbom"
+    ],
+    prefixes: [
+      "goodbom"
+    ],
+    files: [
+      "/images/Foto Goodbom.png",
+      "/images/goodbom.png"
+    ]
+  },
+
+  {
+    key: "hirota",
+    tokens: [
+      "hrt",
+      "hirota"
+    ],
+    prefixes: [
+      "hirota"
+    ],
+    files: [
+      "/images/Foto Hirota.png",
+      "/images/hirota.png"
+    ]
+  },
+
+  {
+    key: "bretas",
+    tokens: [
+      "bre",
+      "bretas"
+    ],
+    prefixes: [
+      "bretas"
+    ],
+    files: [
+      "/images/Foto Bretas.png",
+      "/images/bretas.png"
+    ]
+  },
+
+  {
+    key: "giga",
+    tokens: [
+      "gig",
+      "giga"
+    ],
+    prefixes: [
+      "giga"
+    ],
+    files: [
+      "/images/Foto Giga.png",
+      "/images/giga.png"
+    ]
+  },
+
+  {
+    key: "nagumo",
+    tokens: [
+      "ngm",
+      "nagumo"
+    ],
+    prefixes: [
+      "nagumo"
+    ],
+    files: [
+      "/images/Foto Nagumo.png",
+      "/images/nagumo.png"
+    ]
+  },
+
+  {
+    key: "ame",
+    tokens: [
+      "ame",
+      "amemarket"
+    ],
+    prefixes: [
+      "ame",
+      "amemarket"
+    ],
+    files: [
+      "/images/Foto Ame.png",
+      "/images/ame.png"
+    ]
+  },
+
+  {
+    key: "ike",
+    tokens: [
+      "ike"
+    ],
+    prefixes: [
+      "ike"
+    ],
+    files: [
+      "/images/Foto IKE.png",
+      "/images/ike.png"
+    ]
+  },
+
+  {
+    key: "tenda",
+    tokens: [
+      "tenda"
+    ],
+    prefixes: [
+      "tenda"
+    ],
+    files: [
+      "/images/Foto Tenda.png",
+      "/images/tenda.png"
+    ]
+  }
+];
+
+const imageFailureLog = new Set();
+
+function normalizeStoreName(value) {
+  return removeDiacriticsKeepSpaces(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
-/* ---------- CSV parser (mantém células originais em __cells) ---------- */
-function csvToObjects(csvText){
+function getStoreImageRule(storeName) {
+  const normalized =
+    normalizeStoreName(storeName);
+
+  const compact =
+    normalized.replace(/\s+/g, "");
+
+  const firstToken =
+    normalized.split(" ")[0] || "";
+
+  return STORE_IMAGE_RULES.find(rule => {
+    const tokenMatch =
+      rule.tokens.some(token => {
+        const normalizedToken =
+          normalizeStoreName(token)
+            .replace(/\s+/g, "");
+
+        return firstToken === normalizedToken;
+      });
+
+    const prefixMatch =
+      rule.prefixes.some(prefix => {
+        const normalizedPrefix =
+          normalizeStoreName(prefix)
+            .replace(/\s+/g, "");
+
+        return compact.startsWith(
+          normalizedPrefix
+        );
+      });
+
+    return tokenMatch || prefixMatch;
+  }) || null;
+}
+
+function getLojaImageCandidates(storeName) {
+  const rule =
+    getStoreImageRule(storeName);
+
+  const files =
+    rule?.files || [];
+
+  return [
+    ...new Set([
+      ...files,
+      DEFAULT_STORE_IMAGE
+    ])
+  ];
+}
+
+function getLojaImage(storeName) {
+  return getLojaImageCandidates(storeName)[0];
+}
+
+function applyLojaImage(imageElement, storeName) {
+  const rule =
+    getStoreImageRule(storeName);
+
+  const candidates =
+    getLojaImageCandidates(storeName);
+
+  const failed = [];
+
+  let candidateIndex = 0;
+
+  const tryNextImage = () => {
+    const nextSource =
+      candidates[candidateIndex++];
+
+    if (!nextSource) {
+      imageElement.onerror = null;
+      imageElement.src =
+        DEFAULT_STORE_IMAGE;
+
+      return;
+    }
+
+    imageElement.onerror = () => {
+      failed.push(nextSource);
+
+      if (
+        candidateIndex <
+        candidates.length
+      ) {
+        tryNextImage();
+        return;
+      }
+
+      imageElement.onerror = null;
+
+      const logKey =
+        rule?.key ||
+        firstTokenKey(storeName) ||
+        storeName;
+
+      if (!imageFailureLog.has(logKey)) {
+        imageFailureLog.add(logKey);
+
+        console.warn(
+          `[IMAGEM] Nenhum arquivo específico foi encontrado para "${storeName}".`,
+          {
+            rede: rule?.key || "não mapeada",
+            caminhosTestados: failed,
+            fallback: DEFAULT_STORE_IMAGE
+          }
+        );
+      }
+    };
+
+    imageElement.src = nextSource;
+  };
+
+  tryNextImage();
+}
+
+/* =========================================================
+   CSV
+   ========================================================= */
+
+function csvToObjects(csvText) {
   const rows = [];
-  let cur = "";
-  let row = [];
+
+  let currentCell = "";
+  let currentRow = [];
   let inQuotes = false;
-  for (let i=0;i<csvText.length;i++){
-    const ch = csvText[i];
-    if (ch === '"'){
-      if (inQuotes && csvText[i+1] === '"'){ cur += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes){
-      row.push(cur); cur = "";
-    } else if ((ch === '\n' || ch === '\r') && !inQuotes){
-      if (ch === '\r' && csvText[i+1] === '\n') i++;
-      row.push(cur); rows.push(row); row = []; cur = "";
-    } else cur += ch;
+
+  for (
+    let index = 0;
+    index < csvText.length;
+    index++
+  ) {
+    const character =
+      csvText[index];
+
+    if (character === '"') {
+      if (
+        inQuotes &&
+        csvText[index + 1] === '"'
+      ) {
+        currentCell += '"';
+        index++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (
+      character === "," &&
+      !inQuotes
+    ) {
+      currentRow.push(currentCell);
+      currentCell = "";
+    } else if (
+      (
+        character === "\n" ||
+        character === "\r"
+      ) &&
+      !inQuotes
+    ) {
+      if (
+        character === "\r" &&
+        csvText[index + 1] === "\n"
+      ) {
+        index++;
+      }
+
+      currentRow.push(currentCell);
+      rows.push(currentRow);
+
+      currentRow = [];
+      currentCell = "";
+    } else {
+      currentCell += character;
+    }
   }
-  if (cur !== "" || row.length){
-    row.push(cur); rows.push(row);
+
+  if (
+    currentCell !== "" ||
+    currentRow.length
+  ) {
+    currentRow.push(currentCell);
+    rows.push(currentRow);
   }
-  if (!rows.length) return [];
-  const headers = rows.shift().map(h => h.trim());
-  return rows.map(r => {
-    const obj = {};
-    for (let i=0;i<headers.length;i++) obj[headers[i]] = (r[i] ?? "").trim();
-    obj.__cells = r.map(c => (c ?? "").toString().trim());
-    return obj;
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const headers =
+    rows.shift()
+      .map(header => header.trim());
+
+  return rows.map(row => {
+    const object = {};
+
+    for (
+      let index = 0;
+      index < headers.length;
+      index++
+    ) {
+      object[headers[index]] =
+        (row[index] ?? "").trim();
+    }
+
+    object.__cells =
+      row.map(cell =>
+        (cell ?? "")
+          .toString()
+          .trim()
+      );
+
+    return object;
   });
 }
 
-/* fetch helpers */
-async function fetchJsonEndpoint(){
-  const res = await fetch(JSON_URL, { cache: "no-store" });
-  if (!res.ok) throw new Error("JSON endpoint returned " + res.status);
-  return await res.json();
-}
-async function fetchCsvFallback(){
-  const res = await fetch(CSV_URL, { cache: "no-store" });
-  if (!res.ok) throw new Error("CSV fetch failed " + res.status);
-  const txt = await res.text();
-  if (/^\s*<!doctype html/i.test(txt) || /<html[\s>]/i.test(txt)) {
-    throw new Error("CSV endpoint returned HTML (provavelmente a planilha não está publicada publicamente).");
+async function fetchJsonEndpoint() {
+  const response =
+    await fetch(JSON_URL, {
+      cache: "no-store"
+    });
+
+  if (!response.ok) {
+    throw new Error(
+      `JSON endpoint retornou ${response.status}`
+    );
   }
-  return csvToObjects(txt);
+
+  return await response.json();
 }
 
-/**
- * findField robusto:
- * - mapeia as chaves do objeto para lowercase para permitir variações de capitalização
- * - busca pelas chaves passadas (também lowercase)
- */
-function findField(obj, keys){
-  if (!obj || typeof obj !== "object") return undefined;
-  const keyMap = {};
-  for (const k of Object.keys(obj)) { keyMap[k.trim().toLowerCase()] = k; }
-  for (const k of keys) {
-    const lk = String(k).trim().toLowerCase();
-    if (keyMap[lk] && obj[keyMap[lk]] !== undefined) return obj[keyMap[lk]];
+async function fetchCsvFallback() {
+  const response =
+    await fetch(CSV_URL, {
+      cache: "no-store"
+    });
+
+  if (!response.ok) {
+    throw new Error(
+      `Falha ao buscar CSV: ${response.status}`
+    );
   }
+
+  const text =
+    await response.text();
+
+  if (
+    /^\s*<!doctype html/i.test(text) ||
+    /<html[\s>]/i.test(text)
+  ) {
+    throw new Error(
+      "O endereço do CSV retornou HTML. Verifique se a planilha está publicada."
+    );
+  }
+
+  return csvToObjects(text);
+}
+
+function findField(object, possibleKeys) {
+  if (
+    !object ||
+    typeof object !== "object"
+  ) {
+    return undefined;
+  }
+
+  const keyMap = {};
+
+  for (
+    const originalKey
+    of Object.keys(object)
+  ) {
+    keyMap[
+      originalKey
+        .trim()
+        .toLowerCase()
+    ] = originalKey;
+  }
+
+  for (
+    const possibleKey
+    of possibleKeys
+  ) {
+    const normalizedKey =
+      String(possibleKey)
+        .trim()
+        .toLowerCase();
+
+    const originalKey =
+      keyMap[normalizedKey];
+
+    if (
+      originalKey &&
+      object[originalKey] !== undefined
+    ) {
+      return object[originalKey];
+    }
+  }
+
   return undefined;
 }
 
-/* ---------- robust coordinate parsing helpers ---------- */
-function parseCoordinate(raw){
-  if (raw === undefined || raw === null) return NaN;
-  const s = String(raw).trim();
-  if (!s) return NaN;
-  const m = s.match(/-?\d+[.,]?\d*/);
-  if (!m) return NaN;
-  const v = parseFloat(m[0].replace(',', '.'));
-  return isFinite(v) ? v : NaN;
-}
-function extractLatLngFromRow(rowObj){
-  const latKeys = ["Latitude","LAT","Lat","latitude","lat","LATITUDE"];
-  const lngKeys = ["Longitude","LNG","Long","LONG","longitude","long","LONGITUDE","Lng","LON","Lon"];
-  let lat = NaN, lng = NaN;
-  const latRaw = findField(rowObj, latKeys);
-  const lngRaw = findField(rowObj, lngKeys);
-  if (latRaw !== undefined) lat = parseCoordinate(latRaw);
-  if (lngRaw !== undefined) lng = parseCoordinate(lngRaw);
-  if (!isFinite(lat) && Array.isArray(rowObj.__cells) && rowObj.__cells.length > 7) lat = parseCoordinate(rowObj.__cells[7]);
-  if (!isFinite(lng) && Array.isArray(rowObj.__cells) && rowObj.__cells.length > 8) lng = parseCoordinate(rowObj.__cells[8]);
-  if (!isFinite(lat) || !isFinite(lng)){
-    const joined = (Array.isArray(rowObj.__cells) ? rowObj.__cells.join(" ") : Object.values(rowObj).join(" "));
-    const matches = joined.match(/-?\d+[.,]?\d*/g);
-    if (matches && matches.length >= 2){
-      if (!isFinite(lat)) lat = parseFloat(matches[matches.length-2].replace(',', '.'));
-      if (!isFinite(lng)) lng = parseFloat(matches[matches.length-1].replace(',', '.'));
-    }
+/* =========================================================
+   COORDENADAS E DATAS
+   ========================================================= */
+
+function parseCoordinate(rawValue) {
+  if (
+    rawValue === undefined ||
+    rawValue === null
+  ) {
+    return NaN;
   }
-  if (!isFinite(lat)) lat = NaN;
-  if (!isFinite(lng)) lng = NaN;
-  return { lat, lng };
+
+  const value =
+    String(rawValue).trim();
+
+  if (!value) {
+    return NaN;
+  }
+
+  const match =
+    value.match(/-?\d+[.,]?\d*/);
+
+  if (!match) {
+    return NaN;
+  }
+
+  const coordinate =
+    parseFloat(
+      match[0].replace(",", ".")
+    );
+
+  return isFinite(coordinate)
+    ? coordinate
+    : NaN;
 }
 
-/* parseDatePreferDDMM */
-function parseDatePreferDDMM(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  const isoMatch = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
-  if (isoMatch) {
-    const y = Number(isoMatch[1]);
-    const m = Number(isoMatch[2]);
-    const d = Number(isoMatch[3]);
-    const dt = new Date(y, m - 1, d);
-    dt.setHours(0,0,0,0);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
-  const parts = s.split(/[\/\-\.\s]/).filter(Boolean);
-  if (parts.length >= 2) {
-    let [p1,p2,p3] = parts.map(p => p.replace(/\D/g,""));
-    const d = parseInt(p1,10);
-    const m = parseInt(p2,10);
-    let y = p3 ? parseInt(p3,10) : new Date().getFullYear();
-    if (y < 100) y += 2000;
-    if (y < 1900) y = new Date().getFullYear();
-    const dt = new Date(y, m-1, d);
-    dt.setHours(0,0,0,0);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
-  const dt = new Date(s);
-  dt.setHours(0,0,0,0);
-  return isNaN(dt.getTime()) ? null : dt;
-}
+function extractLatLngFromRow(rowObject) {
+  const latitudeKeys = [
+    "Latitude",
+    "LAT",
+    "Lat",
+    "latitude",
+    "lat",
+    "LATITUDE"
+  ];
 
-/* ---------- carregar dados e ordenar por data, removendo >4 dias passados ---------- */
-async function loadAndPrepareData(forceReload=false){
-  // tentativa segura de carregar do cache
-  try {
-    if (!forceReload) {
-      const rawCache = localStorage.getItem(CACHE_KEY);
-      const time = parseInt(localStorage.getItem(CACHE_TIME_KEY) || "0",10);
-      if (rawCache && (Date.now() - time) < CACHE_TTL_MS) {
-        try {
-          const parsed = JSON.parse(rawCache);
-          if (Array.isArray(parsed) && parsed.length) {
-            allData = parsed;
-            console.log("Dados carregados do cache:", allData.length);
-            return;
-          }
-        } catch (e) { console.warn("Falha ao ler cache, limpando...", e); localStorage.removeItem(CACHE_KEY); localStorage.removeItem(CACHE_TIME_KEY); }
+  const longitudeKeys = [
+    "Longitude",
+    "LNG",
+    "Long",
+    "LONG",
+    "longitude",
+    "long",
+    "LONGITUDE",
+    "Lng",
+    "LON",
+    "Lon"
+  ];
+
+  let latitude = NaN;
+  let longitude = NaN;
+
+  const rawLatitude =
+    findField(
+      rowObject,
+      latitudeKeys
+    );
+
+  const rawLongitude =
+    findField(
+      rowObject,
+      longitudeKeys
+    );
+
+  if (rawLatitude !== undefined) {
+    latitude =
+      parseCoordinate(rawLatitude);
+  }
+
+  if (rawLongitude !== undefined) {
+    longitude =
+      parseCoordinate(rawLongitude);
+  }
+
+  if (
+    !isFinite(latitude) &&
+    Array.isArray(rowObject.__cells) &&
+    rowObject.__cells.length > 7
+  ) {
+    latitude =
+      parseCoordinate(
+        rowObject.__cells[7]
+      );
+  }
+
+  if (
+    !isFinite(longitude) &&
+    Array.isArray(rowObject.__cells) &&
+    rowObject.__cells.length > 8
+  ) {
+    longitude =
+      parseCoordinate(
+        rowObject.__cells[8]
+      );
+  }
+
+  if (
+    !isFinite(latitude) ||
+    !isFinite(longitude)
+  ) {
+    const joinedValues =
+      Array.isArray(rowObject.__cells)
+        ? rowObject.__cells.join(" ")
+        : Object.values(rowObject)
+          .join(" ");
+
+    const coordinateMatches =
+      joinedValues.match(
+        /-?\d+[.,]?\d*/g
+      );
+
+    if (
+      coordinateMatches &&
+      coordinateMatches.length >= 2
+    ) {
+      if (!isFinite(latitude)) {
+        latitude = parseFloat(
+          coordinateMatches[
+            coordinateMatches.length - 2
+          ].replace(",", ".")
+        );
+      }
+
+      if (!isFinite(longitude)) {
+        longitude = parseFloat(
+          coordinateMatches[
+            coordinateMatches.length - 1
+          ].replace(",", ".")
+        );
       }
     }
-  } catch(e){ console.warn("Erro acessando cache localStorage:", e); }
-
-  // buscar CSV público (fallback)
-  let raw = [];
-  try {
-    raw = await fetchCsvFallback();
-    console.log("CSV fetch OK, linhas:", raw.length);
-  } catch(errCsv){
-    console.error("CSV fetch failed", errCsv);
-    setFeedback("Erro ao buscar CSV: " + (errCsv && errCsv.message ? errCsv.message : "ver console"));
-    raw = [];
   }
 
-  const mapped = raw.map(row=>{
-    const nome = findField(row, ["Nome da Loja","Loja","Nome","nome","Loja Nome"]) || findField(row, ["A"]) || (row.__cells && row.__cells[0]) || "";
-    const diaRaw = findField(row, ["Dia do treinamento","Dia","Data","Data do treinamento"]) || (row.__cells && row.__cells[1]) || "";
-    const turno = findField(row, ["Turno","turno"]) || (row.__cells && row.__cells[2]) || "";
-    const link = findField(row, ["Link SquareSpace","Link"]) || (row.__cells && row.__cells[3]) || "";
-    const imgOk = findField(row, ["Imagem Preenchida corretamente?","Imagem"]) || (row.__cells && row.__cells[5]) || "";
-    // CORREÇÃO CRÍTICA: coluna J (index 9) = ESTADO; coluna K (index 10) = CIDADE
-    const estado = row.__cells?.[9] ?? "";
-    const cidade = row.__cells?.[10] ?? "";
-    const { lat, lng } = extractLatLngFromRow(row);
-    const dateObj = parseDatePreferDDMM(diaRaw);
-    const nomeStr = String(nome).trim();
-    return {
-      raw: row,
-      nome: nomeStr,
-      turno,
-      link,
-      imgOk,
-      lat: isFinite(lat) ? Number(lat) : NaN,
-      lng: isFinite(lng) ? Number(lng) : NaN,
-      dateObj,
-      estado: String(estado).trim(),
-      cidade: String(cidade).trim(),
-      lojaKey: firstTokenKey(nomeStr) // chave simplificada para agrupar lojas
-    };
-  });
+  if (!isFinite(latitude)) {
+    latitude = NaN;
+  }
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const cutoff = new Date(today); cutoff.setDate(today.getDate() - 4);
+  if (!isFinite(longitude)) {
+    longitude = NaN;
+  }
 
-  allData = mapped
-    .filter(r => r.nome && r.dateObj instanceof Date && !isNaN(r.dateObj.getTime()))
-    .filter(r => r.dateObj >= cutoff)
-    .map(r => ({...r, lojaNorm: normalize(r.nome)}))
-    .sort((a,b)=>{
-      const todaySort = new Date(); todaySort.setHours(0,0,0,0);
-      const aPast = a.dateObj < todaySort;
-      const bPast = b.dateObj < todaySort;
-      if (aPast !== bPast) return aPast ? 1 : -1; // eventos passados vão pro final
-      return a.dateObj - b.dateObj; // mantém ordenação cronológica
+  return {
+    lat: latitude,
+    lng: longitude
+  };
+}
+
+function parseDatePreferDDMM(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const value =
+    String(rawValue).trim();
+
+  const isoMatch =
+    value.match(
+      /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/
+    );
+
+  if (isoMatch) {
+    const year =
+      Number(isoMatch[1]);
+
+    const month =
+      Number(isoMatch[2]);
+
+    const day =
+      Number(isoMatch[3]);
+
+    const date =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
+
+    date.setHours(0, 0, 0, 0);
+
+    return isNaN(date.getTime())
+      ? null
+      : date;
+  }
+
+  const parts =
+    value
+      .split(/[\/\-\.\s]/)
+      .filter(Boolean);
+
+  if (parts.length >= 2) {
+    let [
+      firstPart,
+      secondPart,
+      thirdPart
+    ] =
+      parts.map(part =>
+        part.replace(/\D/g, "")
+      );
+
+    const day =
+      parseInt(firstPart, 10);
+
+    const month =
+      parseInt(secondPart, 10);
+
+    let year =
+      thirdPart
+        ? parseInt(thirdPart, 10)
+        : new Date().getFullYear();
+
+    if (year < 100) {
+      year += 2000;
+    }
+
+    if (year < 1900) {
+      year =
+        new Date().getFullYear();
+    }
+
+    const date =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
+
+    date.setHours(0, 0, 0, 0);
+
+    return isNaN(date.getTime())
+      ? null
+      : date;
+  }
+
+  const date =
+    new Date(value);
+
+  date.setHours(0, 0, 0, 0);
+
+  return isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+/* =========================================================
+   CARREGAMENTO DOS DADOS
+   ========================================================= */
+
+async function loadAndPrepareData(
+  forceReload = false
+) {
+  try {
+    if (!forceReload) {
+      const cachedContent =
+        localStorage.getItem(
+          CACHE_KEY
+        );
+
+      const cacheTime =
+        parseInt(
+          localStorage.getItem(
+            CACHE_TIME_KEY
+          ) || "0",
+          10
+        );
+
+      const cacheIsValid =
+        cachedContent &&
+        (
+          Date.now() - cacheTime
+        ) < CACHE_TTL_MS;
+
+      if (cacheIsValid) {
+        try {
+          const parsedCache =
+            JSON.parse(
+              cachedContent
+            );
+
+          if (
+            Array.isArray(parsedCache) &&
+            parsedCache.length
+          ) {
+            allData =
+              parsedCache
+                .map(item => {
+                  const revivedDate =
+                    item?.dateObj
+                      ? new Date(
+                        item.dateObj
+                      )
+                      : null;
+
+                  return {
+                    ...item,
+
+                    dateObj:
+                      revivedDate instanceof Date &&
+                      !isNaN(
+                        revivedDate.getTime()
+                      )
+                        ? revivedDate
+                        : null,
+
+                    lojaKey:
+                      item?.lojaKey ||
+                      firstTokenKey(
+                        item?.nome || ""
+                      ),
+
+                    lojaNorm:
+                      item?.lojaNorm ||
+                      normalize(
+                        item?.nome || ""
+                      )
+                  };
+                })
+                .filter(item =>
+                  item.nome &&
+                  item.dateObj instanceof Date &&
+                  !isNaN(
+                    item.dateObj.getTime()
+                  )
+                );
+
+            console.log(
+              "Dados carregados do cache:",
+              allData.length
+            );
+
+            return;
+          }
+        } catch (cacheError) {
+          console.warn(
+            "Falha ao ler cache. Limpando o cache.",
+            cacheError
+          );
+
+          localStorage.removeItem(
+            CACHE_KEY
+          );
+
+          localStorage.removeItem(
+            CACHE_TIME_KEY
+          );
+        }
+      }
+    }
+  } catch (storageError) {
+    console.warn(
+      "Erro ao acessar localStorage:",
+      storageError
+    );
+  }
+
+  let rawData = [];
+
+  try {
+    rawData =
+      await fetchCsvFallback();
+
+    console.log(
+      "CSV carregado:",
+      rawData.length,
+      "linhas"
+    );
+  } catch (csvError) {
+    console.error(
+      "Falha ao carregar CSV:",
+      csvError
+    );
+
+    setFeedback(
+      "Erro ao buscar CSV: " +
+      (
+        csvError?.message ||
+        "verifique o console"
+      )
+    );
+
+    rawData = [];
+  }
+
+  const mappedData =
+    rawData.map(row => {
+      const storeName =
+        findField(row, [
+          "Nome da Loja",
+          "Loja",
+          "Nome",
+          "nome",
+          "Loja Nome"
+        ]) ||
+        findField(row, ["A"]) ||
+        row.__cells?.[0] ||
+        "";
+
+      const trainingDate =
+        findField(row, [
+          "Dia do treinamento",
+          "Dia",
+          "Data",
+          "Data do treinamento"
+        ]) ||
+        row.__cells?.[1] ||
+        "";
+
+      const shift =
+        findField(row, [
+          "Turno",
+          "turno"
+        ]) ||
+        row.__cells?.[2] ||
+        "";
+
+      const link =
+        findField(row, [
+          "Link SquareSpace",
+          "Link"
+        ]) ||
+        row.__cells?.[3] ||
+        "";
+
+      const imageFilled =
+        findField(row, [
+          "Imagem Preenchida corretamente?",
+          "Imagem"
+        ]) ||
+        row.__cells?.[5] ||
+        "";
+
+      /*
+        A planilha atual utiliza:
+        coluna J, índice 9 = Estado
+        coluna K, índice 10 = Cidade
+      */
+
+      const state =
+        row.__cells?.[9] ?? "";
+
+      const city =
+        row.__cells?.[10] ?? "";
+
+      const {
+        lat,
+        lng
+      } =
+        extractLatLngFromRow(row);
+
+      const dateObject =
+        parseDatePreferDDMM(
+          trainingDate
+        );
+
+      const cleanStoreName =
+        String(storeName).trim();
+
+      return {
+        raw: row,
+
+        nome: cleanStoreName,
+
+        turno: shift,
+
+        link,
+
+        imgOk: imageFilled,
+
+        lat:
+          isFinite(lat)
+            ? Number(lat)
+            : NaN,
+
+        lng:
+          isFinite(lng)
+            ? Number(lng)
+            : NaN,
+
+        dateObj: dateObject,
+
+        estado:
+          String(state).trim(),
+
+        cidade:
+          String(city).trim(),
+
+        lojaKey:
+          firstTokenKey(
+            cleanStoreName
+          )
+      };
     });
 
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(allData)); localStorage.setItem(CACHE_TIME_KEY, Date.now().toString()); } catch(e){ console.warn("cache write failed", e); }
+  const today =
+    new Date();
+
+  today.setHours(0, 0, 0, 0);
+
+  const cutoffDate =
+    new Date(today);
+
+  cutoffDate.setDate(
+    today.getDate() - 4
+  );
+
+  allData =
+    mappedData
+      .filter(item =>
+        item.nome &&
+        item.dateObj instanceof Date &&
+        !isNaN(
+          item.dateObj.getTime()
+        )
+      )
+      .filter(item =>
+        item.dateObj >= cutoffDate
+      )
+      .map(item => ({
+        ...item,
+
+        lojaNorm:
+          normalize(item.nome)
+      }))
+      .sort((first, second) => {
+        const comparisonDate =
+          new Date();
+
+        comparisonDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
+
+        const firstIsPast =
+          first.dateObj <
+          comparisonDate;
+
+        const secondIsPast =
+          second.dateObj <
+          comparisonDate;
+
+        if (
+          firstIsPast !==
+          secondIsPast
+        ) {
+          return firstIsPast
+            ? 1
+            : -1;
+        }
+
+        return (
+          first.dateObj -
+          second.dateObj
+        );
+      });
+
+  try {
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify(allData)
+    );
+
+    localStorage.setItem(
+      CACHE_TIME_KEY,
+      Date.now().toString()
+    );
+  } catch (cacheWriteError) {
+    console.warn(
+      "Não foi possível gravar o cache:",
+      cacheWriteError
+    );
+  }
 }
 
-/* UI helpers */
-function setFeedback(msg){
-  const f = $("feedback");
-  if (f) f.textContent = msg;
+/* =========================================================
+   INTERFACE
+   ========================================================= */
+
+function setFeedback(message) {
+  const feedback =
+    $("feedback");
+
+  if (feedback) {
+    feedback.textContent =
+      message;
+  }
 }
 
-// ----- Segurança: handler central para mudanças de filtro -----
 function handleFilterChange() {
   try {
     renderCards();
-  } catch (err) {
-    console.warn("handleFilterChange erro:", err);
+  } catch (filterError) {
+    console.warn(
+      "Erro ao aplicar os filtros:",
+      filterError
+    );
   }
 }
 
-/* FILTER UI (painel com 3 grupos: lojas, estados, cidades) */
-function ensureLabelFor(element, text){
-  if (!element || !element.id) return null;
-  const prev = element.previousElementSibling;
-  if (prev && prev.classList && prev.classList.contains("filter-label")) {
-    prev.textContent = text;
-    return prev;
+function ensureLabelFor(
+  element,
+  labelText
+) {
+  if (
+    !element ||
+    !element.id
+  ) {
+    return null;
   }
-  const label = document.createElement("label");
-  label.className = "filter-label";
-  label.htmlFor = element.id;
-  label.style.marginRight = "4px";
-  label.style.fontWeight = "600";
-  label.textContent = text;
-  element.parentNode.insertBefore(label, element);
+
+  const previousElement =
+    element.previousElementSibling;
+
+  if (
+    previousElement?.classList
+      ?.contains("filter-label")
+  ) {
+    previousElement.textContent =
+      labelText;
+
+    return previousElement;
+  }
+
+  const label =
+    document.createElement("label");
+
+  label.className =
+    "filter-label";
+
+  label.htmlFor =
+    element.id;
+
+  label.style.marginRight =
+    "4px";
+
+  label.style.fontWeight =
+    "600";
+
+  label.textContent =
+    labelText;
+
+  element.parentNode.insertBefore(
+    label,
+    element
+  );
+
   return label;
 }
 
-function createCheckbox(id, value, labelText, name){
-  const wrapper = document.createElement("div");
+function createCheckbox(
+  id,
+  value,
+  labelText,
+  name
+) {
+  const wrapper =
+    document.createElement("div");
+
   wrapper.className = "chk";
   wrapper.style.width = "100%";
   wrapper.style.boxSizing = "border-box";
@@ -342,19 +1656,22 @@ function createCheckbox(id, value, labelText, name){
   wrapper.style.cursor = "pointer";
   wrapper.style.minWidth = "0";
 
-  const input = document.createElement("input");
+  const input =
+    document.createElement("input");
+
   input.type = "checkbox";
   input.id = id;
-  input.value = value; // valor usado internamente como key (já normalizado quando necessário)
+  input.value = value;
   input.name = name;
   input.className = "filter-checkbox";
   input.style.flex = "0 0 auto";
   input.style.margin = "0";
 
-  const label = document.createElement("label");
+  const label =
+    document.createElement("label");
+
   label.htmlFor = id;
   label.textContent = labelText;
-
   label.style.display = "block";
   label.style.flex = "1 1 auto";
   label.style.whiteSpace = "normal";
@@ -366,673 +1683,2289 @@ function createCheckbox(id, value, labelText, name){
 
   wrapper.appendChild(input);
   wrapper.appendChild(label);
-  
-  wrapper.addEventListener("click", (e) => {
-    e.stopPropagation(); 
-    if (e.target === input) return;
-    input.checked = !input.checked;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
 
-  return { wrapper, input, label };
+  wrapper.addEventListener(
+    "click",
+    event => {
+      event.stopPropagation();
+
+      if (event.target === input) {
+        return;
+      }
+
+      input.checked =
+        !input.checked;
+
+      input.dispatchEvent(
+        new Event("change", {
+          bubbles: true
+        })
+      );
+    }
+  );
+
+  return {
+    wrapper,
+    input,
+    label
+  };
 }
 
-function populateFilter(){
-  const sel = $("lojaFilter");
-  const chkContainer = $("checkboxFilters");
-  if(!chkContainer) return;
+function populateFilter() {
+  const legacyStoreSelect =
+    $("lojaFilter");
 
-  if (sel) sel.style.display = "none";
-  let cidadeSel = $("cidadeFilter"); if (cidadeSel) cidadeSel.style.display = "none";
-  let estadoSel = $("estadoFilter"); if (estadoSel) estadoSel.style.display = "none";
+  const checkboxContainer =
+    $("checkboxFilters");
 
-  // limpar e preparar container
-  chkContainer.innerHTML = "";
-  chkContainer.classList.add("filters-panel");
-  chkContainer.setAttribute("aria-hidden", "true");
-  chkContainer.classList.add("checkbox-filters"); 
-  chkContainer.style.overflow = "visible";
-  chkContainer.style.transition = "max-height .25s ease";
-  chkContainer.style.maxHeight = "0";
+  if (!checkboxContainer) {
+    return;
+  }
 
-  const header = document.createElement("div");
-  header.className = "filters-header";
-  header.style.display = "flex";
-  header.style.justifyContent = "space-between";
-  header.style.alignItems = "center";
-  header.style.marginBottom = "8px";
-  const hw = document.createElement("div");
-  hw.textContent = "";
-  hw.style.fontWeight = "700";
-  header.appendChild(hw);
-  chkContainer.appendChild(header);
+  if (legacyStoreSelect) {
+    legacyStoreSelect.style.display =
+      "none";
+  }
 
-  const clearBtn = document.createElement("button");
-  clearBtn.type = "button";
-  clearBtn.textContent = "";
-  clearBtn.className = "btn-clear-filters";
-  clearBtn.style.cursor = "pointer";
-  clearBtn.classList.add('btn-clear-filters--invisible');
-  clearBtn.setAttribute('aria-hidden', 'true');
-  clearBtn.tabIndex = -1;
-  clearBtn.disabled = true;
-  clearBtn.addEventListener("click", ()=>{
-    chkContainer.querySelectorAll("input[type=checkbox]").forEach(i=>i.checked=false);
-    if (sel) sel.value = "Todas";
-    if (estadoSel) estadoSel.value = "Todas";
-    if (cidadeSel) cidadeSel.value = "Todas";
-    handleFilterChange();
-  });
+  const legacyCitySelect =
+    $("cidadeFilter");
 
-  const groupsWrap = document.createElement("div");
-  groupsWrap.className = "filters-groups";
-  groupsWrap.style.display = "flex";
-  groupsWrap.style.gap = "18px";
-  groupsWrap.style.flexWrap = "nowrap";
-  groupsWrap.style.width = "100%";
-  groupsWrap.style.alignItems = "flex-start";
+  if (legacyCitySelect) {
+    legacyCitySelect.style.display =
+      "none";
+  }
 
-  function makeGroup(title, id){
-    const col = document.createElement("div");
-    col.className = "filter-group";
-    col.style.flex = "1 1 0";
-    col.style.minWidth = "0"; 
-    col.style.boxSizing = "border-box";
-    col.style.display = "flex";
-    col.style.flexDirection = "column";
-    col.style.gap = "8px";
+  const legacyStateSelect =
+    $("estadoFilter");
 
-    const t = document.createElement("div");
-    t.textContent = title;
-    t.style.fontWeight = "700";
-    t.style.marginBottom = "6px";
-    col.appendChild(t);
+  if (legacyStateSelect) {
+    legacyStateSelect.style.display =
+      "none";
+  }
 
-    const list = document.createElement("div");
+  checkboxContainer.innerHTML =
+    "";
+
+  checkboxContainer.classList.add(
+    "filters-panel"
+  );
+
+  checkboxContainer.classList.add(
+    "checkbox-filters"
+  );
+
+  checkboxContainer.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  checkboxContainer.style.overflow =
+    "visible";
+
+  checkboxContainer.style.transition =
+    "max-height .25s ease";
+
+  checkboxContainer.style.maxHeight =
+    "0";
+
+  const header =
+    document.createElement("div");
+
+  header.className =
+    "filters-header";
+
+  header.style.display =
+    "flex";
+
+  header.style.justifyContent =
+    "space-between";
+
+  header.style.alignItems =
+    "center";
+
+  header.style.marginBottom =
+    "8px";
+
+  const headerTitle =
+    document.createElement("div");
+
+  headerTitle.textContent = "";
+  headerTitle.style.fontWeight = "700";
+
+  header.appendChild(
+    headerTitle
+  );
+
+  checkboxContainer.appendChild(
+    header
+  );
+
+  const clearButton =
+    document.createElement("button");
+
+  clearButton.type = "button";
+  clearButton.textContent = "";
+  clearButton.className =
+    "btn-clear-filters";
+
+  clearButton.classList.add(
+    "btn-clear-filters--invisible"
+  );
+
+  clearButton.style.cursor =
+    "pointer";
+
+  clearButton.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  clearButton.tabIndex = -1;
+  clearButton.disabled = true;
+
+  clearButton.addEventListener(
+    "click",
+    () => {
+      checkboxContainer
+        .querySelectorAll(
+          'input[type="checkbox"]'
+        )
+        .forEach(input => {
+          input.checked = false;
+        });
+
+      if (legacyStoreSelect) {
+        legacyStoreSelect.value =
+          "Todas";
+      }
+
+      if (legacyStateSelect) {
+        legacyStateSelect.value =
+          "Todas";
+      }
+
+      if (legacyCitySelect) {
+        legacyCitySelect.value =
+          "Todas";
+      }
+
+      handleFilterChange();
+    }
+  );
+
+  const groupsWrapper =
+    document.createElement("div");
+
+  groupsWrapper.className =
+    "filters-groups";
+
+  groupsWrapper.style.display =
+    "flex";
+
+  groupsWrapper.style.gap =
+    "18px";
+
+  groupsWrapper.style.flexWrap =
+    "nowrap";
+
+  groupsWrapper.style.width =
+    "100%";
+
+  groupsWrapper.style.alignItems =
+    "flex-start";
+
+  function createFilterGroup(
+    title,
+    id
+  ) {
+    const column =
+      document.createElement("div");
+
+    column.className =
+      "filter-group";
+
+    column.style.flex =
+      "1 1 0";
+
+    column.style.minWidth =
+      "0";
+
+    column.style.boxSizing =
+      "border-box";
+
+    column.style.display =
+      "flex";
+
+    column.style.flexDirection =
+      "column";
+
+    column.style.gap =
+      "8px";
+
+    const titleElement =
+      document.createElement("div");
+
+    titleElement.textContent =
+      title;
+
+    titleElement.style.fontWeight =
+      "700";
+
+    titleElement.style.marginBottom =
+      "6px";
+
+    column.appendChild(
+      titleElement
+    );
+
+    const list =
+      document.createElement("div");
+
     list.id = id;
     list.className = "filters-list";
     list.style.display = "flex";
     list.style.flexDirection = "column";
     list.style.width = "100%";
     list.style.minWidth = "0";
-    list.style.maxHeight = "calc(var(--filter-item-height,36px) * 10)";
-    list.style.overflowY = "auto";
-    list.style.WebkitOverflowScrolling = "touch";
-    list.style.padding = "8px";
-    list.style.border = "1px solid rgba(0,0,0,0.06)";
-    list.style.borderRadius = "8px";
-    list.style.boxSizing = "border-box";
 
-    col.appendChild(list);
-    return { col, list };
+    list.style.maxHeight =
+      "calc(var(--filter-item-height, 36px) * 10)";
+
+    list.style.overflowY =
+      "auto";
+
+    list.style.WebkitOverflowScrolling =
+      "touch";
+
+    list.style.padding =
+      "8px";
+
+    list.style.border =
+      "1px solid rgba(0, 0, 0, 0.06)";
+
+    list.style.borderRadius =
+      "8px";
+
+    list.style.boxSizing =
+      "border-box";
+
+    column.appendChild(list);
+
+    return {
+      column,
+      list
+    };
   }
 
-  // ORDEM CORRIGIDA: Lojas | Estados | Cidades
-  const lojasGroup = makeGroup("Redes","lojasFiltersContainer");
-  const estadosGroup = makeGroup("Cidades","estadosFiltersContainer");
-  const cidadesGroup = makeGroup("Estados","cidadesFiltersContainer");
+  const storesGroup =
+    createFilterGroup(
+      "Redes",
+      "lojasFiltersContainer"
+    );
 
-  groupsWrap.appendChild(lojasGroup.col);
-  groupsWrap.appendChild(estadosGroup.col);
-  groupsWrap.appendChild(cidadesGroup.col);
+  const statesGroup =
+    createFilterGroup(
+      "Estados",
+      "estadosFiltersContainer"
+    );
 
-  chkContainer.appendChild(groupsWrap);
+  const citiesGroup =
+    createFilterGroup(
+      "Cidades",
+      "cidadesFiltersContainer"
+    );
 
-  // --- construir mapas normalizados para remover duplicatas por case/acento ---
-  const lojaMap = new Map(); // key -> label
-  const stateMap = new Map(); // normalize(state) -> first observed display state
-  const cityMap = new Map(); // normalize(city) -> first observed display city
+  groupsWrapper.appendChild(
+    storesGroup.column
+  );
 
-  for (const d of allData){
-    // lojas: chave simplificada (primeira palavra sem acento)
-    const key = d.lojaKey || firstTokenKey(d.nome || "");
-    if (key && !lojaMap.has(key)){
-      lojaMap.set(key, firstTokenLabel(d.nome || ""));
+  groupsWrapper.appendChild(
+    statesGroup.column
+  );
+
+  groupsWrapper.appendChild(
+    citiesGroup.column
+  );
+
+  checkboxContainer.appendChild(
+    groupsWrapper
+  );
+
+  const storesMap =
+    new Map();
+
+  const statesMap =
+    new Map();
+
+  const citiesMap =
+    new Map();
+
+  for (const item of allData) {
+    const storeKey =
+      item.lojaKey ||
+      firstTokenKey(
+        item.nome || ""
+      );
+
+    if (
+      storeKey &&
+      !storesMap.has(storeKey)
+    ) {
+      storesMap.set(
+        storeKey,
+        firstTokenLabel(
+          item.nome || ""
+        )
+      );
     }
-    // estados
-    const s = String(d.estado || "").trim();
-    const sKey = normalize(s);
-    if (s && !stateMap.has(sKey)) stateMap.set(sKey, s);
-    // cidades
-    const c = String(d.cidade || "").trim();
-    const cKey = normalize(c);
-    if (c && !cityMap.has(cKey)) cityMap.set(cKey, c);
-  }
 
-  // ordenar por label (pt-BR) antes de criar checkboxes
-  const lojaEntries = Array.from(lojaMap.entries()).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
-  const stateEntries = Array.from(stateMap.entries()).map(([k,v])=>[k,v]).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
-  const cityEntries = Array.from(cityMap.entries()).map(([k,v])=>[k,v]).sort((a,b)=> a[1].localeCompare(b[1],'pt-BR'));
+    const state =
+      String(
+        item.estado || ""
+      ).trim();
 
-  // criar checkboxes de lojas (value = key)
-  for (const [key,labelText] of lojaEntries){
-    const id = "chk_loja_" + key.replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, key, labelText, "loja"); // value é a key
-    lojasGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange);
-  }
+    const normalizedState =
+      normalize(state);
 
-  // criar checkboxes de estados (value = normalized key)
-  for (const [k,display] of stateEntries){
-    const id = "chk_estado_" + k.replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, k, display, "estado"); // value é normalized key
-    estadosGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange);
-  }
-
-  // criar checkboxes de cidades (value = normalized key)
-  for (const [k,display] of cityEntries){
-    const id = "chk_cidade_" + k.replace(/\W/g,"_");
-    const { wrapper, input } = createCheckbox(id, k, display, "cidade"); // value é normalized key
-    cidadesGroup.list.appendChild(wrapper);
-    input.addEventListener("change", handleFilterChange);
-  }
-
-  const toggle = $("filtersToggle");
-  if (toggle){
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.addEventListener("click", (e)=>{
-      e.preventDefault();
-      const isOpen = chkContainer.classList.toggle("open");
-      chkContainer.setAttribute("aria-hidden", (!isOpen).toString());
-      if (isOpen) {
-        chkContainer.style.maxHeight = "1200px";
-        toggle.setAttribute("aria-expanded","true");
-      } else {
-        chkContainer.style.maxHeight = "0";
-        toggle.setAttribute("aria-expanded","false");
-      }
-    });
-  } else {
-    chkContainer.classList.add("open");
-    chkContainer.setAttribute("aria-hidden","false");
-    chkContainer.style.maxHeight = "1200px";
-  }
-
-  const controlsEl = document.querySelector('.controls');
-  if (controlsEl) {
-    const existing = controlsEl.querySelector('.btn-clear-filters');
-    if (existing) existing.remove();
-    controlsEl.appendChild(clearBtn);
-  } else {
-    if (chkContainer.parentNode) {
-      const existing = chkContainer.parentNode.querySelector('.btn-clear-filters');
-      if (existing) existing.remove();
-      chkContainer.parentNode.insertBefore(clearBtn, chkContainer.nextSibling);
+    if (
+      state &&
+      !statesMap.has(
+        normalizedState
+      )
+    ) {
+      statesMap.set(
+        normalizedState,
+        state
+      );
     }
+
+    const city =
+      String(
+        item.cidade || ""
+      ).trim();
+
+    const normalizedCity =
+      normalize(city);
+
+    if (
+      city &&
+      !citiesMap.has(
+        normalizedCity
+      )
+    ) {
+      citiesMap.set(
+        normalizedCity,
+        city
+      );
+    }
+  }
+
+  const storeEntries =
+    Array.from(
+      storesMap.entries()
+    ).sort((first, second) =>
+      first[1].localeCompare(
+        second[1],
+        "pt-BR"
+      )
+    );
+
+  const stateEntries =
+    Array.from(
+      statesMap.entries()
+    ).sort((first, second) =>
+      first[1].localeCompare(
+        second[1],
+        "pt-BR"
+      )
+    );
+
+  const cityEntries =
+    Array.from(
+      citiesMap.entries()
+    ).sort((first, second) =>
+      first[1].localeCompare(
+        second[1],
+        "pt-BR"
+      )
+    );
+
+  for (
+    const [
+      storeKey,
+      storeLabel
+    ] of storeEntries
+  ) {
+    const id =
+      "chk_loja_" +
+      storeKey.replace(/\W/g, "_");
+
+    const {
+      wrapper,
+      input
+    } =
+      createCheckbox(
+        id,
+        storeKey,
+        storeLabel,
+        "loja"
+      );
+
+    storesGroup.list.appendChild(
+      wrapper
+    );
+
+    input.addEventListener(
+      "change",
+      handleFilterChange
+    );
+  }
+
+  for (
+    const [
+      normalizedState,
+      displayState
+    ] of stateEntries
+  ) {
+    const id =
+      "chk_estado_" +
+      normalizedState.replace(
+        /\W/g,
+        "_"
+      );
+
+    const {
+      wrapper,
+      input
+    } =
+      createCheckbox(
+        id,
+        normalizedState,
+        displayState,
+        "estado"
+      );
+
+    statesGroup.list.appendChild(
+      wrapper
+    );
+
+    input.addEventListener(
+      "change",
+      handleFilterChange
+    );
+  }
+
+  for (
+    const [
+      normalizedCity,
+      displayCity
+    ] of cityEntries
+  ) {
+    const id =
+      "chk_cidade_" +
+      normalizedCity.replace(
+        /\W/g,
+        "_"
+      );
+
+    const {
+      wrapper,
+      input
+    } =
+      createCheckbox(
+        id,
+        normalizedCity,
+        displayCity,
+        "cidade"
+      );
+
+    citiesGroup.list.appendChild(
+      wrapper
+    );
+
+    input.addEventListener(
+      "change",
+      handleFilterChange
+    );
+  }
+
+  const filterToggle =
+    $("filtersToggle");
+
+  if (filterToggle) {
+    filterToggle.setAttribute(
+      "aria-expanded",
+      "false"
+    );
+
+    filterToggle.onclick =
+      event => {
+        event.preventDefault();
+
+        const isOpen =
+          checkboxContainer
+            .classList
+            .toggle("open");
+
+        checkboxContainer.setAttribute(
+          "aria-hidden",
+          String(!isOpen)
+        );
+
+        if (isOpen) {
+          checkboxContainer.style.maxHeight =
+            "1200px";
+
+          filterToggle.setAttribute(
+            "aria-expanded",
+            "true"
+          );
+        } else {
+          checkboxContainer.style.maxHeight =
+            "0";
+
+          filterToggle.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        }
+      };
+  } else {
+    checkboxContainer.classList.add(
+      "open"
+    );
+
+    checkboxContainer.setAttribute(
+      "aria-hidden",
+      "false"
+    );
+
+    checkboxContainer.style.maxHeight =
+      "1200px";
+  }
+
+  const controls =
+    document.querySelector(
+      ".controls"
+    );
+
+  if (controls) {
+    const existingButton =
+      controls.querySelector(
+        ".btn-clear-filters"
+      );
+
+    existingButton?.remove();
+
+    controls.appendChild(
+      clearButton
+    );
+  } else if (
+    checkboxContainer.parentNode
+  ) {
+    const existingButton =
+      checkboxContainer.parentNode
+        .querySelector(
+          ".btn-clear-filters"
+        );
+
+    existingButton?.remove();
+
+    checkboxContainer.parentNode
+      .insertBefore(
+        clearButton,
+        checkboxContainer.nextSibling
+      );
   }
 }
 
-function closeFilterPanelIfOpen(){
-  const toggle=$("filtersToggle");
-  const panel=$("checkboxFilters");
-  if(!panel) return;
-  if(!toggle) return;
-  if(panel.classList.contains("open")){
-    panel.classList.remove("open");
-    panel.setAttribute("aria-hidden","true");
-    panel.style.maxHeight = "0";
-    toggle.setAttribute("aria-expanded","false");
-  }
-}
+function closeFilterPanelIfOpen() {
+  const toggle =
+    $("filtersToggle");
 
-/* renderCards */
-function renderCards(userLat = undefined, userLng = undefined) {
-  if (userLat !== undefined && userLng !== undefined && isFinite(Number(userLat)) && isFinite(Number(userLng))) {
-    userCoords = { lat: Number(userLat), lon: Number(userLng) };
-  }
+  const panel =
+    $("checkboxFilters");
 
-  const container = $("container");
-  if (!container) {
-    console.warn("renderCards: elemento #container não encontrado no DOM.");
-    setFeedback("Erro: elemento visual (#container) não encontrado. Verifique se o HTML tem o contêiner.");
+  if (!panel || !toggle) {
     return;
   }
+
+  if (
+    panel.classList.contains("open")
+  ) {
+    panel.classList.remove("open");
+
+    panel.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+
+    panel.style.maxHeight =
+      "0";
+
+    toggle.setAttribute(
+      "aria-expanded",
+      "false"
+    );
+  }
+}
+
+/* =========================================================
+   RENDERIZAÇÃO DOS CARDS
+   ========================================================= */
+
+function renderCards(
+  userLatitude = undefined,
+  userLongitude = undefined
+) {
+  if (
+    userLatitude !== undefined &&
+    userLongitude !== undefined &&
+    isFinite(Number(userLatitude)) &&
+    isFinite(Number(userLongitude))
+  ) {
+    userCoords = {
+      lat: Number(userLatitude),
+      lon: Number(userLongitude)
+    };
+  }
+
+  const container =
+    $("container");
+
+  if (!container) {
+    console.warn(
+      "Elemento #container não encontrado."
+    );
+
+    setFeedback(
+      "Erro: elemento visual #container não encontrado."
+    );
+
+    return;
+  }
+
   container.innerHTML = "";
 
-  // refs
-  const sel = $("lojaFilter"); // legacy
-  const chkContainer = $("checkboxFilters");
-  const lojasContainer = document.getElementById("lojasFiltersContainer");
-  const estadosContainer = document.getElementById("estadosFiltersContainer");
-  const cidadesContainer = document.getElementById("cidadesFiltersContainer");
+  const legacyStoreSelect =
+    $("lojaFilter");
 
-  // pegar seleções (valores são as KEYS normalizadas que setamos na populateFilter)
-  let checkedLojas = [];
-  if (lojasContainer) checkedLojas = Array.from(lojasContainer.querySelectorAll("input[type=checkbox]:checked")).map(i => i.value);
-  const fallbackSelValue = sel ? (sel.value ?? "Todas") : "Todas";
-  let checkedEstados = [];
-  if (estadosContainer) checkedEstados = Array.from(estadosContainer.querySelectorAll("input[type=checkbox]:checked")).map(i => i.value);
-  let checkedCidades = [];
-  if (cidadesContainer) checkedCidades = Array.from(cidadesContainer.querySelectorAll("input[type=checkbox]:checked")).map(i => i.value);
-  const filterValue = (checkedLojas.length ? null : (fallbackSelValue ?? "Todas"));
-  const estadoHasAny = checkedEstados.length > 0;
-  const cidadeHasAny = checkedCidades.length > 0;
-  const today = new Date();
+  const storesContainer =
+    document.getElementById(
+      "lojasFiltersContainer"
+    );
+
+  const statesContainer =
+    document.getElementById(
+      "estadosFiltersContainer"
+    );
+
+  const citiesContainer =
+    document.getElementById(
+      "cidadesFiltersContainer"
+    );
+
+  let checkedStores = [];
+
+  if (storesContainer) {
+    checkedStores =
+      Array.from(
+        storesContainer.querySelectorAll(
+          'input[type="checkbox"]:checked'
+        )
+      ).map(input => input.value);
+  }
+
+  const fallbackStoreValue =
+    legacyStoreSelect
+      ? (
+        legacyStoreSelect.value ??
+        "Todas"
+      )
+      : "Todas";
+
+  let checkedStates = [];
+
+  if (statesContainer) {
+    checkedStates =
+      Array.from(
+        statesContainer.querySelectorAll(
+          'input[type="checkbox"]:checked'
+        )
+      ).map(input => input.value);
+  }
+
+  let checkedCities = [];
+
+  if (citiesContainer) {
+    checkedCities =
+      Array.from(
+        citiesContainer.querySelectorAll(
+          'input[type="checkbox"]:checked'
+        )
+      ).map(input => input.value);
+  }
+
+  const legacyFilterValue =
+    checkedStores.length
+      ? null
+      : fallbackStoreValue;
+
+  const hasStateFilter =
+    checkedStates.length > 0;
+
+  const hasCityFilter =
+    checkedCities.length > 0;
+
+  const today =
+    new Date();
+
   today.setHours(0, 0, 0, 0);
-  let ordered = allData.slice();
 
-  // FILTRO LOJA (comparar com lojaKey)
-  if (checkedLojas.length) {
-    const set = new Set(checkedLojas); // values already keys
-    ordered = ordered.filter(d => set.has(d.lojaKey));
-  } else if (filterValue && filterValue !== "Todas") {
-    // legacy: if select used, comparar pelo nome completo (normalizado)
-    ordered = ordered.filter(d => normalize(d.nome) === normalize(filterValue));
+  let orderedData =
+    allData.slice();
+
+  if (checkedStores.length) {
+    const storeSet =
+      new Set(checkedStores);
+
+    orderedData =
+      orderedData.filter(item =>
+        storeSet.has(item.lojaKey)
+      );
+  } else if (
+    legacyFilterValue &&
+    legacyFilterValue !== "Todas"
+  ) {
+    orderedData =
+      orderedData.filter(item =>
+        normalize(item.nome) ===
+        normalize(legacyFilterValue)
+      );
   }
 
-  // FILTRO ESTADO (values são normalized keys)
-  if (estadoHasAny) {
-    const setE = new Set(checkedEstados.map(s => String(s)));
-    ordered = ordered.filter(d => setE.has(normalize(d.estado || "")));
+  if (hasStateFilter) {
+    const stateSet =
+      new Set(
+        checkedStates.map(String)
+      );
+
+    orderedData =
+      orderedData.filter(item =>
+        stateSet.has(
+          normalize(
+            item.estado || ""
+          )
+        )
+      );
   }
 
-  // FILTRO CIDADE (values são normalized keys)
-  if (cidadeHasAny) {
-    const setC = new Set(checkedCidades.map(s => String(s)));
-    ordered = ordered.filter(d => setC.has(normalize(d.cidade || "")));
+  if (hasCityFilter) {
+    const citySet =
+      new Set(
+        checkedCities.map(String)
+      );
+
+    orderedData =
+      orderedData.filter(item =>
+        citySet.has(
+          normalize(
+            item.cidade || ""
+          )
+        )
+      );
   }
 
-  if (!ordered.length) {
-    setFeedback("Nenhum treinamento encontrado.");
+  if (!orderedData.length) {
+    setFeedback(
+      "Nenhum treinamento encontrado."
+    );
+
     return;
-  } else setFeedback("");
-
-  // ordenação por distância (se userCoords definido)
-  const hasActiveLocation = userCoords && isFinite(userCoords.lat) && isFinite(userCoords.lon);
-
-  if (hasActiveLocation) {
-    const future = ordered.filter(d => d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today);
-    const past = ordered.filter(d => !(d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today));
-    const futureWithDist = future.map(d => {
-      const hasCoords = isFinite(d.lat) && isFinite(d.lng);
-      const dist = hasCoords ? distanceKm(userCoords.lat, userCoords.lon, d.lat, d.lng) : Infinity;
-      return { ...d, __dist: (isFinite(dist) ? Number(dist) : Infinity), __hasCoords: hasCoords };
-    }).sort((a, b) => { return (a.__dist || Infinity) - (b.__dist || Infinity); });
-    const pastMapped = past.map(d => ({ ...d, __dist: null, __hasCoords: isFinite(d.lat) && isFinite(d.lng) }));
-    ordered = futureWithDist.concat(pastMapped);
-  } else {
-    ordered = ordered.map(d => ({ ...d, __dist: null, __hasCoords: isFinite(d.lat) && isFinite(d.lng) }));
   }
 
-  const frag = document.createDocumentFragment();
-  for (const d of ordered) {
-    const pastDays = (d.dateObj instanceof Date && !isNaN(d.dateObj.getTime())) ? Math.floor((today - d.dateObj) / (1000 * 60 * 60 * 24)) : 0;
-    const isPast = d.dateObj instanceof Date ? d.dateObj < today : false;
-    const isRecentPast = isPast && pastDays <= 3;
-    const card = document.createElement("article");
-    card.className = "card" + (isRecentPast ? " past" : "");
-    card.setAttribute("tabindex", "0");
-    // dataset.loja agora guarda a chave simplificada
-    card.dataset.loja = d.lojaKey || normalize(d.nome);
-    if (d.link) {
-      card.style.cursor = "pointer";
-      card.addEventListener("click", ev => {
-        if (ev.target.tagName.toLowerCase() === "a" || ev.target.tagName.toLowerCase() === "button") return;
-        window.open(d.link, "_blank", "noopener");
-      });
-      card.addEventListener("keydown", ev => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); window.open(d.link, "_blank", "noopener"); }
-      });
+  setFeedback("");
+
+  const locationIsActive =
+    userCoords &&
+    isFinite(userCoords.lat) &&
+    isFinite(userCoords.lon);
+
+  if (locationIsActive) {
+    const futureItems =
+      orderedData.filter(item =>
+        item.dateObj instanceof Date &&
+        !isNaN(
+          item.dateObj.getTime()
+        ) &&
+        item.dateObj >= today
+      );
+
+    const pastItems =
+      orderedData.filter(item =>
+        !(
+          item.dateObj instanceof Date &&
+          !isNaN(
+            item.dateObj.getTime()
+          ) &&
+          item.dateObj >= today
+        )
+      );
+
+    const futureItemsWithDistance =
+      futureItems
+        .map(item => {
+          const hasCoordinates =
+            isFinite(item.lat) &&
+            isFinite(item.lng);
+
+          const distance =
+            hasCoordinates
+              ? distanceKm(
+                userCoords.lat,
+                userCoords.lon,
+                item.lat,
+                item.lng
+              )
+              : Infinity;
+
+          return {
+            ...item,
+
+            __dist:
+              isFinite(distance)
+                ? Number(distance)
+                : Infinity,
+
+            __hasCoords:
+              hasCoordinates
+          };
+        })
+        .sort((first, second) => {
+          const firstDistance =
+            isFinite(first.__dist)
+              ? first.__dist
+              : Infinity;
+
+          const secondDistance =
+            isFinite(second.__dist)
+              ? second.__dist
+              : Infinity;
+
+          return (
+            firstDistance -
+            secondDistance
+          );
+        });
+
+    const mappedPastItems =
+      pastItems.map(item => ({
+        ...item,
+
+        __dist: null,
+
+        __hasCoords:
+          isFinite(item.lat) &&
+          isFinite(item.lng)
+      }));
+
+    orderedData =
+      futureItemsWithDistance.concat(
+        mappedPastItems
+      );
+  } else {
+    orderedData =
+      orderedData.map(item => ({
+        ...item,
+
+        __dist: null,
+
+        __hasCoords:
+          isFinite(item.lat) &&
+          isFinite(item.lng)
+      }));
+  }
+
+  const fragment =
+    document.createDocumentFragment();
+
+  for (const item of orderedData) {
+    const pastDays =
+      item.dateObj instanceof Date &&
+      !isNaN(item.dateObj.getTime())
+        ? Math.floor(
+          (
+            today - item.dateObj
+          ) /
+          (
+            1000 *
+            60 *
+            60 *
+            24
+          )
+        )
+        : 0;
+
+    const isPast =
+      item.dateObj instanceof Date
+        ? item.dateObj < today
+        : false;
+
+    const isRecentPast =
+      isPast &&
+      pastDays <= 3;
+
+    const card =
+      document.createElement(
+        "article"
+      );
+
+    card.className =
+      "card" +
+      (
+        isRecentPast
+          ? " past"
+          : ""
+      );
+
+    card.setAttribute(
+      "tabindex",
+      "0"
+    );
+
+    card.dataset.loja =
+      item.lojaKey ||
+      normalize(item.nome);
+
+    card.dataset.lat =
+      String(item.lat);
+
+    card.dataset.lng =
+      String(item.lng);
+
+    if (item.link) {
+      card.style.cursor =
+        "pointer";
+
+      card.addEventListener(
+        "click",
+        event => {
+          const targetTag =
+            event.target.tagName
+              .toLowerCase();
+
+          if (
+            targetTag === "a" ||
+            targetTag === "button"
+          ) {
+            return;
+          }
+
+          window.open(
+            item.link,
+            "_blank",
+            "noopener"
+          );
+        }
+      );
+
+      card.addEventListener(
+        "keydown",
+        event => {
+          if (
+            event.key === "Enter" ||
+            event.key === " "
+          ) {
+            event.preventDefault();
+
+            window.open(
+              item.link,
+              "_blank",
+              "noopener"
+            );
+          }
+        }
+      );
     }
 
-    const img = document.createElement("img");
-    img.alt = d.nome;
-    img.src = getLojaImage(d.nome);
-    img.onerror = () => img.src = "images/default.jpg";
-    card.appendChild(img);
+    const image =
+      document.createElement("img");
 
-    const body = document.createElement("div");
-    body.className = "card-body";
-    const title = document.createElement("div");
-    title.className = "card-title";
-    const nameNode = document.createElement("span");
-    nameNode.textContent = d.nome;
-    title.appendChild(nameNode);
+    image.alt = item.nome;
+    image.loading = "lazy";
+    image.decoding = "async";
 
-    if (hasActiveLocation && d.__hasCoords && isFinite(d.__dist)) {
-      const strong = document.createElement("strong");
-      strong.style.marginLeft = "8px";
-      strong.style.fontWeight = "700";
-      strong.style.color = "var(--primary)";
-      strong.textContent = `- à ${formatDistanceBr(d.__dist)} km`;
-      title.appendChild(strong);
+    applyLojaImage(
+      image,
+      item.nome
+    );
+
+    card.appendChild(image);
+
+    const body =
+      document.createElement("div");
+
+    body.className =
+      "card-body";
+
+    const title =
+      document.createElement("div");
+
+    title.className =
+      "card-title";
+
+    const nameNode =
+      document.createElement("span");
+
+    nameNode.textContent =
+      item.nome;
+
+    title.appendChild(
+      nameNode
+    );
+
+    if (
+      locationIsActive &&
+      item.__hasCoords &&
+      isFinite(item.__dist)
+    ) {
+      const distanceStrong =
+        document.createElement(
+          "strong"
+        );
+
+      distanceStrong.style.marginLeft =
+        "8px";
+
+      distanceStrong.style.fontWeight =
+        "700";
+
+      distanceStrong.style.color =
+        "var(--primary)";
+
+      distanceStrong.textContent =
+        `- a ${formatDistanceBr(item.__dist)} km`;
+
+      title.appendChild(
+        distanceStrong
+      );
     }
 
     body.appendChild(title);
 
-    const sub = document.createElement("div");
-    sub.className = "card-sub";
-    let dateStr = "";
-    if (d.dateObj instanceof Date && !isNaN(d.dateObj.getTime())) { dateStr = formatDateBr(d.dateObj); } else if (d.raw) {
-      const diaRaw = findField(d.raw, ["Dia do treinamento", "Dia", "Data", "Data do treinamento"]) || (d.raw.__cells && d.raw.__cells[1]) || "";
-      const dtFallback = parseDatePreferDDMM(diaRaw);
-      if (dtFallback) dateStr = formatDateBr(dtFallback);
-    }
-    sub.textContent = `${dateStr} | ${d.turno || ""}`;
-    body.appendChild(sub);
+    const subtitle =
+      document.createElement("div");
 
-    if (hasActiveLocation && d.__hasCoords && isFinite(d.__dist)) {
-      const dd = document.createElement("div");
-      dd.className = "card-distance";
-      dd.textContent = `📍 ${formatDistanceBr(d.__dist)} km de você`;
-      body.appendChild(dd);
+    subtitle.className =
+      "card-sub";
+
+    let formattedDate = "";
+
+    if (
+      item.dateObj instanceof Date &&
+      !isNaN(
+        item.dateObj.getTime()
+      )
+    ) {
+      formattedDate =
+        formatDateBr(
+          item.dateObj
+        );
+    } else if (item.raw) {
+      const rawDate =
+        findField(item.raw, [
+          "Dia do treinamento",
+          "Dia",
+          "Data",
+          "Data do treinamento"
+        ]) ||
+        item.raw.__cells?.[1] ||
+        "";
+
+      const fallbackDate =
+        parseDatePreferDDMM(
+          rawDate
+        );
+
+      if (fallbackDate) {
+        formattedDate =
+          formatDateBr(
+            fallbackDate
+          );
+      }
     }
 
-    // META: ordem ESTADO — CIDADE (CORRIGIDO)
-    const meta = document.createElement("div");
-    meta.className = "card-meta";
-    const partes = [];
-    if (d.estado) partes.push(d.estado);
-    if (d.cidade) partes.push(d.cidade);
-    if (partes.length) meta.textContent = partes.join(" — ");
-    if (meta.textContent) body.appendChild(meta);
+    subtitle.textContent =
+      `${formattedDate} | ${item.turno || ""}`;
+
+    body.appendChild(
+      subtitle
+    );
+
+    if (
+      locationIsActive &&
+      item.__hasCoords &&
+      isFinite(item.__dist)
+    ) {
+      const distanceElement =
+        document.createElement(
+          "div"
+        );
+
+      distanceElement.className =
+        "card-distance";
+
+      distanceElement.textContent =
+        `📍 ${formatDistanceBr(item.__dist)} km de você`;
+
+      body.appendChild(
+        distanceElement
+      );
+    }
+
+    const metadata =
+      document.createElement("div");
+
+    metadata.className =
+      "card-meta";
+
+    const metadataParts = [];
+
+    if (item.estado) {
+      metadataParts.push(
+        item.estado
+      );
+    }
+
+    if (item.cidade) {
+      metadataParts.push(
+        item.cidade
+      );
+    }
+
+    if (metadataParts.length) {
+      metadata.textContent =
+        metadataParts.join(" — ");
+    }
+
+    if (metadata.textContent) {
+      body.appendChild(
+        metadata
+      );
+    }
 
     card.appendChild(body);
-    frag.appendChild(card);
+    fragment.appendChild(card);
   }
-  container.appendChild(frag);
+
+  container.appendChild(
+    fragment
+  );
 }
 
-/* ---------- GEO HELPERS ---------- */
-function getCurrentPositionPromise(options={},timeoutMs=null){
-  return new Promise((resolve,reject)=>{
-    if(!navigator.geolocation){ const e=new Error("Geolocation API não suportada"); e.code=0; return reject(e); }
-    let timer=null;
-    const onSuccess=pos=>{ if(timer) clearTimeout(timer); resolve(pos); };
-    const onError=err=>{ if(timer) clearTimeout(timer); reject(err); };
-    try { navigator.geolocation.getCurrentPosition(onSuccess,onError,options); } catch(ex){ return reject(ex); }
-    if(timeoutMs && timeoutMs>0){ timer=setTimeout(()=>{ const e=new Error("Timeout externo"); e.code=3; reject(e); }, timeoutMs); }
-  });
+/* =========================================================
+   GEOLOCALIZAÇÃO
+   ========================================================= */
+
+function getCurrentPositionPromise(
+  options = {},
+  timeoutMilliseconds = null
+) {
+  return new Promise(
+    (resolve, reject) => {
+      if (!navigator.geolocation) {
+        const error =
+          new Error(
+            "Geolocation API não suportada"
+          );
+
+        error.code = 0;
+
+        reject(error);
+        return;
+      }
+
+      let timer = null;
+
+      const handleSuccess =
+        position => {
+          if (timer) {
+            clearTimeout(timer);
+          }
+
+          resolve(position);
+        };
+
+      const handleError =
+        error => {
+          if (timer) {
+            clearTimeout(timer);
+          }
+
+          reject(error);
+        };
+
+      try {
+        navigator.geolocation
+          .getCurrentPosition(
+            handleSuccess,
+            handleError,
+            options
+          );
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
+      if (
+        timeoutMilliseconds &&
+        timeoutMilliseconds > 0
+      ) {
+        timer = setTimeout(
+          () => {
+            const error =
+              new Error(
+                "Timeout externo"
+              );
+
+            error.code = 3;
+
+            reject(error);
+          },
+          timeoutMilliseconds
+        );
+      }
+    }
+  );
 }
-async function obtainPositionStrategy(){
-  try{
-    const pos = await getCurrentPositionPromise({enableHighAccuracy:false,timeout:5000,maximumAge:300000},7000);
-    return {lat: Number(pos.coords.latitude), lon: Number(pos.coords.longitude)};
-  } catch(errQuick){}
-  try{
-    const pos = await getCurrentPositionPromise({enableHighAccuracy:true,timeout:15000,maximumAge:0},18000);
-    return {lat: Number(pos.coords.latitude), lon: Number(pos.coords.longitude)};
-  } catch(errHigh){ throw errHigh; }
+
+async function obtainPositionStrategy() {
+  try {
+    const position =
+      await getCurrentPositionPromise(
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 300000
+        },
+        7000
+      );
+
+    return {
+      lat:
+        Number(
+          position.coords.latitude
+        ),
+
+      lon:
+        Number(
+          position.coords.longitude
+        )
+    };
+  } catch (quickError) {
+    console.warn(
+      "Localização rápida não funcionou:",
+      quickError
+    );
+  }
+
+  const accuratePosition =
+    await getCurrentPositionPromise(
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      },
+      18000
+    );
+
+  return {
+    lat:
+      Number(
+        accuratePosition
+          .coords
+          .latitude
+      ),
+
+    lon:
+      Number(
+        accuratePosition
+          .coords
+          .longitude
+      )
+  };
 }
-async function fetchIpFallback(){
-  try{
-    setFeedback("Tentando localização por IP (fallback)...");
-    const res=await fetch("https://ipapi.co/json/");
-    if(!res.ok) return null;
-    const json=await res.json();
-    if(json && json.latitude && json.longitude) return {lat:parseFloat(json.latitude), lon:parseFloat(json.longitude)};
-  } catch(e){}
+
+async function fetchIpFallback() {
+  try {
+    setFeedback(
+      "Tentando localização aproximada por IP..."
+    );
+
+    const response =
+      await fetch(
+        "https://ipapi.co/json/"
+      );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      await response.json();
+
+    if (
+      data &&
+      data.latitude &&
+      data.longitude
+    ) {
+      return {
+        lat:
+          parseFloat(
+            data.latitude
+          ),
+
+        lon:
+          parseFloat(
+            data.longitude
+          )
+      };
+    }
+  } catch (error) {
+    console.warn(
+      "Erro na localização por IP:",
+      error
+    );
+  }
+
   return null;
 }
 
-/* ---------- Helpers novos MINIMOS (mantêm nomes existentes) ---------- */
-// Calcula e anexa __dist em allData (in-place). Garante que itens sem coords recebam Infinity.
-function computeDistancesForAllData(lat, lon){
-  const today = new Date(); today.setHours(0,0,0,0);
-  if(!Array.isArray(allData)) return;
-  for(const d of allData){
-    try{
-      if(d && d.dateObj instanceof Date && !isNaN(d.dateObj.getTime()) && d.dateObj >= today && isFinite(d.lat) && isFinite(d.lng)){
-        d.__dist = distanceKm(lat, lon, d.lat, d.lng);
+function computeDistancesForAllData(
+  latitude,
+  longitude
+) {
+  const today =
+    new Date();
+
+  today.setHours(0, 0, 0, 0);
+
+  if (!Array.isArray(allData)) {
+    return;
+  }
+
+  for (const item of allData) {
+    try {
+      const isFutureTraining =
+        item?.dateObj instanceof Date &&
+        !isNaN(
+          item.dateObj.getTime()
+        ) &&
+        item.dateObj >= today;
+
+      const hasCoordinates =
+        isFinite(item?.lat) &&
+        isFinite(item?.lng);
+
+      if (
+        isFutureTraining &&
+        hasCoordinates
+      ) {
+        item.__dist =
+          distanceKm(
+            latitude,
+            longitude,
+            item.lat,
+            item.lng
+          );
       } else {
-        d.__dist = Infinity;
+        item.__dist =
+          Infinity;
       }
-    } catch(e){
-      d.__dist = Infinity;
+    } catch (error) {
+      item.__dist =
+        Infinity;
     }
   }
 }
-// Reordena os elementos DOM dentro do #container com base em allData.__dist.
-// Usa dataset.loja em cada card para relacionar com a entrada de allData.
-// Se não encontrar correspondência, deixa no final.
-function reorderDomCardsByAllDataDist(){
-  const container = $("container");
-  if(!container) return;
-  const cards = Array.from(container.querySelectorAll(".card"));
-  if(!cards.length) return;
 
-  // mapa lojaKey -> dist
-  const distMap = new Map();
-  for(const d of allData){
-    const key = (d.lojaKey || d.loja || d.name || d.nome || "").toString();
-    distMap.set(key, (isFinite(d.__dist) ? d.__dist : Infinity));
+function reorderDomCardsByAllDataDist() {
+  const container =
+    $("container");
+
+  if (!container) {
+    return;
   }
 
-  // comparator- get distance by card dataset.loja or fallback Infinity
-  cards.sort((a,b)=>{
-    const ka = (a.dataset.loja || a.getAttribute("data-loja") || "").toString();
-    const kb = (b.dataset.loja || b.getAttribute("data-loja") || "").toString();
-    const da = distMap.has(ka) ? distMap.get(ka) : parseFloat(a.dataset.distance || Infinity);
-    const db = distMap.has(kb) ? distMap.get(kb) : parseFloat(b.dataset.distance || Infinity);
-    return (isFinite(da) ? da : Infinity) - (isFinite(db) ? db : Infinity);
+  const cards =
+    Array.from(
+      container.querySelectorAll(
+        ".card"
+      )
+    );
+
+  if (!cards.length) {
+    return;
+  }
+
+  const distanceMap =
+    new Map();
+
+  for (const item of allData) {
+    const key =
+      (
+        item.lojaKey ||
+        item.loja ||
+        item.name ||
+        item.nome ||
+        ""
+      ).toString();
+
+    distanceMap.set(
+      key,
+      isFinite(item.__dist)
+        ? item.__dist
+        : Infinity
+    );
+  }
+
+  cards.sort((firstCard, secondCard) => {
+    const firstKey =
+      (
+        firstCard.dataset.loja ||
+        firstCard.getAttribute(
+          "data-loja"
+        ) ||
+        ""
+      ).toString();
+
+    const secondKey =
+      (
+        secondCard.dataset.loja ||
+        secondCard.getAttribute(
+          "data-loja"
+        ) ||
+        ""
+      ).toString();
+
+    const firstDistance =
+      distanceMap.has(firstKey)
+        ? distanceMap.get(firstKey)
+        : parseFloat(
+          firstCard.dataset.distance ||
+          Infinity
+        );
+
+    const secondDistance =
+      distanceMap.has(secondKey)
+        ? distanceMap.get(secondKey)
+        : parseFloat(
+          secondCard.dataset.distance ||
+          Infinity
+        );
+
+    return (
+      (
+        isFinite(firstDistance)
+          ? firstDistance
+          : Infinity
+      ) -
+      (
+        isFinite(secondDistance)
+          ? secondDistance
+          : Infinity
+      )
+    );
   });
 
-  // reappend in sorted order
-  for(const c of cards){
-    container.appendChild(c);
+  for (const card of cards) {
+    container.appendChild(card);
   }
 }
-// Atualiza texto/atributo de distância dentro de cada card após cálculo (vários seletores)
-function updateCardDistancesFromAllData(lat, lon){
-  const container = $("container");
-  if(!container) return;
-  const cards = container.querySelectorAll(".card");
-  for(const c of cards){
-    // find card's loja key
-    const lojaKey = (c.dataset.loja || c.getAttribute("data-loja") || "").toString();
-    // find corresponding allData item
-    let match = null;
-    if(lojaKey){
-      match = allData.find(d => ((d.lojaKey||d.loja||d.nome||d.name||"")+"") === lojaKey);
+
+function updateCardDistancesFromAllData(
+  latitude,
+  longitude
+) {
+  const container =
+    $("container");
+
+  if (!container) {
+    return;
+  }
+
+  const cards =
+    container.querySelectorAll(
+      ".card"
+    );
+
+  for (const card of cards) {
+    const storeKey =
+      (
+        card.dataset.loja ||
+        card.getAttribute(
+          "data-loja"
+        ) ||
+        ""
+      ).toString();
+
+    let matchingItem = null;
+
+    if (storeKey) {
+      matchingItem =
+        allData.find(item =>
+          (
+            item.lojaKey ||
+            item.loja ||
+            item.nome ||
+            item.name ||
+            ""
+          ).toString() === storeKey
+        );
     }
-    // fallback: try to read lat/lng from the card attributes
-    let cardLat = NaN, cardLon = NaN;
-    if(match && isFinite(match.__dist)){
-      // use match.__dist directly
-      const dist = match.__dist;
-      writeDistanceToCard(c, dist);
-      c.dataset.distance = String(dist);
+
+    if (
+      matchingItem &&
+      isFinite(
+        matchingItem.__dist
+      )
+    ) {
+      const distance =
+        matchingItem.__dist;
+
+      writeDistanceToCard(
+        card,
+        distance
+      );
+
+      card.dataset.distance =
+        String(distance);
+
       continue;
-    } else {
-      // attempt to read coords from dataset/attrs
-      cardLat = parseFloat(c.dataset.lat ?? c.getAttribute("data-lat") ?? c.getAttribute("data-latitude"));
-      cardLon = parseFloat(c.dataset.lng ?? c.getAttribute("data-lng") ?? c.getAttribute("data-longitude") ?? c.getAttribute("data-lon"));
-      if(isFinite(cardLat) && isFinite(cardLon)){
-        const dist = distanceKm(lat, lon, cardLat, cardLon);
-        writeDistanceToCard(c, dist);
-        c.dataset.distance = String(dist);
-        continue;
+    }
+
+    const cardLatitude =
+      parseFloat(
+        card.dataset.lat ??
+        card.getAttribute(
+          "data-lat"
+        ) ??
+        card.getAttribute(
+          "data-latitude"
+        )
+      );
+
+    const cardLongitude =
+      parseFloat(
+        card.dataset.lng ??
+        card.getAttribute(
+          "data-lng"
+        ) ??
+        card.getAttribute(
+          "data-longitude"
+        ) ??
+        card.getAttribute(
+          "data-lon"
+        )
+      );
+
+    if (
+      isFinite(cardLatitude) &&
+      isFinite(cardLongitude)
+    ) {
+      const distance =
+        distanceKm(
+          latitude,
+          longitude,
+          cardLatitude,
+          cardLongitude
+        );
+
+      writeDistanceToCard(
+        card,
+        distance
+      );
+
+      card.dataset.distance =
+        String(distance);
+
+      continue;
+    }
+
+    card.dataset.distance =
+      String(Infinity);
+  }
+}
+
+function writeDistanceToCard(
+  cardElement,
+  distance
+) {
+  const formattedNumber =
+    typeof formatDistanceBr === "function"
+      ? formatDistanceBr(distance)
+      : String(
+        Math.round(
+          distance * 10
+        ) / 10
+      );
+
+  const formattedText =
+    `📍 ${formattedNumber} km de você`;
+
+  const distanceElement =
+    cardElement.querySelector(
+      ".distance, .card-distance, .dist, [data-distance]"
+    );
+
+  if (distanceElement) {
+    try {
+      distanceElement.textContent =
+        formattedText;
+    } catch (error) {
+      cardElement.setAttribute(
+        "data-distance",
+        String(distance)
+      );
+    }
+
+    return;
+  }
+
+  try {
+    const body =
+      cardElement.querySelector(
+        ".card-body"
+      ) || cardElement;
+
+    const newDistanceElement =
+      document.createElement(
+        "span"
+      );
+
+    newDistanceElement.className =
+      "card-distance auto-inserted";
+
+    newDistanceElement.textContent =
+      formattedText;
+
+    body.appendChild(
+      newDistanceElement
+    );
+  } catch (error) {
+    console.warn(
+      "Não foi possível inserir a distância no card:",
+      error
+    );
+  }
+}
+
+let meLocalizeRunning = false;
+
+async function meLocalize() {
+  if (meLocalizeRunning) {
+    return;
+  }
+
+  meLocalizeRunning = true;
+
+  const button =
+    $("btnLocalize");
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    if (!navigator.geolocation) {
+      setFeedback(
+        "Este navegador não suporta localização."
+      );
+
+      return;
+    }
+
+    if (
+      navigator.permissions &&
+      navigator.permissions.query
+    ) {
+      try {
+        const permission =
+          await navigator.permissions
+            .query({
+              name: "geolocation"
+            });
+
+        if (
+          permission.state ===
+          "denied"
+        ) {
+          setFeedback(
+            "A permissão de localização está bloqueada nas configurações do navegador."
+          );
+
+          return;
+        }
+      } catch (permissionError) {
+        console.warn(
+          "Não foi possível verificar a permissão:",
+          permissionError
+        );
       }
     }
-    // if nothing, set attribute to Infinity so it goes to the bottom
-    c.dataset.distance = String(Infinity);
-  }
-}
-// util: escreve string formatada da distância no card procurando elementos comuns
-function writeDistanceToCard(cardEl, dist){
-  const formatted = (typeof formatDistanceBr === "function") ? formatDistanceBr(dist) : (Math.round(dist*10)/10) + " km";
-  const distEl = cardEl.querySelector(".distance, .card-distance, .dist, [data-distance]");
-  if(distEl){
-    try { distEl.textContent = formatted; } catch(e){ cardEl.setAttribute("data-distance", String(dist)); }
-  } else {
-    // tenta inserir no topo como fallback (não quebra layout se não for necessário)
+
+    if (
+      !Array.isArray(allData) ||
+      allData.length === 0
+    ) {
+      setFeedback(
+        "Aguardando o carregamento dos dados..."
+      );
+
+      await loadAndPrepareData(
+        true
+      );
+
+      populateFilter();
+    }
+
+    setFeedback(
+      "Obtendo sua localização..."
+    );
+
+    const coordinates =
+      await obtainPositionStrategy();
+
+    userCoords = {
+      lat:
+        Number(
+          coordinates.lat
+        ),
+
+      lon:
+        Number(
+          coordinates.lon
+        )
+    };
+
+    computeDistancesForAllData(
+      userCoords.lat,
+      userCoords.lon
+    );
+
     try {
-      const meta = cardEl.querySelector(".meta") || cardEl;
-      const span = document.createElement("span");
-      span.className = "card-distance auto-inserted";
-      span.textContent = formatted;
-      meta.appendChild(span);
-    } catch(e){
-      // ignore
-    }
-  }
-}
+      allData.sort(
+        (first, second) => {
+          const firstDistance =
+            isFinite(first.__dist)
+              ? first.__dist
+              : Infinity;
 
-/* ---------- meLocalize corrigido (agora 100% determinístico: calcular -> ordenar -> render -> reorder/update) ---------- */
-let meLocalizeRunning = false;
-async function meLocalize(){
-  if(meLocalizeRunning) return;
-  meLocalizeRunning = true;
-  const btn = $("btnLocalize");
-  if(btn) btn.disabled = true;
-  try {
-    if(!navigator.geolocation){ setFeedback("Navegador não suporta Geolocation."); return; }
-    if(navigator.permissions && navigator.permissions.query){
-      try { const p = await navigator.permissions.query({name:"geolocation"}); if(p.state === "denied"){ setFeedback("Permissão de localização negada — habilite nas configurações do site."); return; } } catch(e){}
-    }
-    if (!Array.isArray(allData) || allData.length === 0){ setFeedback("Aguardando carregamento dos dados..."); await loadAndPrepareData(true); populateFilter(); }
-    setFeedback("Obtendo sua localização…");
-    let coords;
-    try { coords = await obtainPositionStrategy(); } catch(err){ throw err; }
+          const secondDistance =
+            isFinite(second.__dist)
+              ? second.__dist
+              : Infinity;
 
-    // define coords globais
-    userCoords = { lat: Number(coords.lat), lon: Number(coords.lon) };
-
-    // 1) Calcular distâncias para ALLDATA (in-place)
-    computeDistancesForAllData(userCoords.lat, userCoords.lon);
-
-    // 2) Ordenar allData por distância (itens sem coords vão pro fim)
-    try{
-      allData.sort((a,b)=>{
-        const da = (isFinite(a.__dist) ? a.__dist : Infinity);
-        const db = (isFinite(b.__dist) ? b.__dist : Infinity);
-        return da - db;
-      });
-    } catch(e){
-      console.warn("Erro ao ordenar allData:", e);
+          return (
+            firstDistance -
+            secondDistance
+          );
+        }
+      );
+    } catch (sortError) {
+      console.warn(
+        "Erro ao ordenar as lojas:",
+        sortError
+      );
     }
 
-    // 3) Reset filtros antes do render (como você já fazia)
-    const sel=$("lojaFilter");
-    const chkContainer=$("checkboxFilters");
-    const estadoSel=$("estadoFilter");
-    const cidadeSel=$("cidadeFilter");
-    if(chkContainer) chkContainer.querySelectorAll("input[type=checkbox]").forEach(i=>i.checked=false);
-    if(sel) sel.value="Todas";
-    if(estadoSel) estadoSel.value = "Todas";
-    if(cidadeSel) cidadeSel.value = "Todas";
+    const legacyStoreSelect =
+      $("lojaFilter");
+
+    const checkboxContainer =
+      $("checkboxFilters");
+
+    const legacyStateSelect =
+      $("estadoFilter");
+
+    const legacyCitySelect =
+      $("cidadeFilter");
+
+    if (checkboxContainer) {
+      checkboxContainer
+        .querySelectorAll(
+          'input[type="checkbox"]'
+        )
+        .forEach(input => {
+          input.checked = false;
+        });
+    }
+
+    if (legacyStoreSelect) {
+      legacyStoreSelect.value =
+        "Todas";
+    }
+
+    if (legacyStateSelect) {
+      legacyStateSelect.value =
+        "Todas";
+    }
+
+    if (legacyCitySelect) {
+      legacyCitySelect.value =
+        "Todas";
+    }
+
     closeFilterPanelIfOpen();
 
-    // 4) Renderizar SOMENTE APÓS termos calculado e ordenado allData
-    // Se renderCards retornar promise, await; se não, Promise.resolve faz o trabalho.
-    await Promise.resolve(renderCards(userCoords.lat, userCoords.lon));
+    await Promise.resolve(
+      renderCards(
+        userCoords.lat,
+        userCoords.lon
+      )
+    );
 
-    // 5) Force repaint / garantir DOM atualizado
-    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(resolve =>
+      requestAnimationFrame(resolve)
+    );
 
-    // 6) Atualizar os textos de distância nos cards (baseado em allData.__dist ou atributos do card)
-    updateCardDistancesFromAllData(userCoords.lat, userCoords.lon);
+    updateCardDistancesFromAllData(
+      userCoords.lat,
+      userCoords.lon
+    );
 
-    // 7) Reordenar DOM dos cards conforme allData.__dist (garante posição correta mesmo se renderCards não respeitou ordem)
     reorderDomCardsByAllDataDist();
 
-    // 8) calcular nearest e exibir feedback
-    const nearest = allData.find(d => isFinite(d.__dist) && d.__dist !== Infinity) || null;
-    if(nearest){
-      const minD = nearest.__dist;
-      const container=$("container");
-      if(container){
-        const cards=container.querySelectorAll(".card");
-        for(const c of cards){
-          if((c.dataset.loja||"") === (nearest.lojaKey || "")){ c.classList.add("nearest"); }
-          else { c.classList.remove("nearest"); }
+    const nearest =
+      allData.find(item =>
+        isFinite(item.__dist) &&
+        item.__dist !== Infinity
+      ) || null;
+
+    if (nearest) {
+      const container =
+        $("container");
+
+      if (container) {
+        const cards =
+          container.querySelectorAll(
+            ".card"
+          );
+
+        for (const card of cards) {
+          if (
+            (
+              card.dataset.loja ||
+              ""
+            ) ===
+            (
+              nearest.lojaKey ||
+              ""
+            )
+          ) {
+            card.classList.add(
+              "nearest"
+            );
+          } else {
+            card.classList.remove(
+              "nearest"
+            );
+          }
         }
       }
-      setFeedback(`Loja mais próxima: ${nearest.nome} (${formatDistanceBr(minD)} km).`);
+
+      setFeedback(
+        `Loja mais próxima: ${nearest.nome} (${formatDistanceBr(nearest.__dist)} km).`
+      );
     } else {
-      setFeedback("Localização obtida — nenhuma loja futura encontrada com coordenadas.");
+      setFeedback(
+        "Localização obtida, mas nenhuma loja futura possui coordenadas válidas."
+      );
     }
+  } catch (locationError) {
+    console.warn(
+      "Erro de localização:",
+      locationError
+    );
 
-  } catch(err){
-    console.warn("meLocalize error:",err);
     try {
-      if(err && (err.code===3||err.code===2||err.message==="Timeout externo")){
-        const ipCoords = await fetchIpFallback();
-        if(ipCoords){
-          userCoords = {lat: ipCoords.lat, lon: ipCoords.lon};
+      const shouldUseIpFallback =
+        locationError &&
+        (
+          locationError.code === 3 ||
+          locationError.code === 2 ||
+          locationError.message ===
+            "Timeout externo"
+        );
 
-          // repetir o pipeline com coords por IP
-          computeDistancesForAllData(userCoords.lat, userCoords.lon);
-          try{ allData.sort((a,b)=>{ const da=isFinite(a.__dist)?a.__dist:Infinity; const db=isFinite(b.__dist)?b.__dist:Infinity; return da-db; }); } catch(e){ console.warn("Ordenação fallback falhou:", e); }
+      if (shouldUseIpFallback) {
+        const ipCoordinates =
+          await fetchIpFallback();
 
-          await Promise.resolve(renderCards(userCoords.lat, userCoords.lon));
-          await new Promise(r => requestAnimationFrame(r));
-          updateCardDistancesFromAllData(userCoords.lat, userCoords.lon);
+        if (ipCoordinates) {
+          userCoords = {
+            lat:
+              Number(
+                ipCoordinates.lat
+              ),
+
+            lon:
+              Number(
+                ipCoordinates.lon
+              )
+          };
+
+          computeDistancesForAllData(
+            userCoords.lat,
+            userCoords.lon
+          );
+
+          try {
+            allData.sort(
+              (first, second) => {
+                const firstDistance =
+                  isFinite(first.__dist)
+                    ? first.__dist
+                    : Infinity;
+
+                const secondDistance =
+                  isFinite(second.__dist)
+                    ? second.__dist
+                    : Infinity;
+
+                return (
+                  firstDistance -
+                  secondDistance
+                );
+              }
+            );
+          } catch (fallbackSortError) {
+            console.warn(
+              "Falha ao ordenar com localização por IP:",
+              fallbackSortError
+            );
+          }
+
+          await Promise.resolve(
+            renderCards(
+              userCoords.lat,
+              userCoords.lon
+            )
+          );
+
+          await new Promise(resolve =>
+            requestAnimationFrame(
+              resolve
+            )
+          );
+
+          updateCardDistancesFromAllData(
+            userCoords.lat,
+            userCoords.lon
+          );
+
           reorderDomCardsByAllDataDist();
 
-          setFeedback("Localização aproximada por IP obtida — distâncias atualizadas.");
+          setFeedback(
+            "Localização aproximada por IP obtida."
+          );
+
           return;
         }
       }
-    } catch(e){ console.warn("IP fallback error:", e); }
-    if(err && err.code===1){ setFeedback("Permissão de localização negada. Habilite nas configurações do site."); return; }
-    setFeedback("Não foi possível obter sua localização. Verifique HTTPS/Permissões/GPS.");
-  } finally { meLocalizeRunning = false; if(btn) btn.disabled = false; }
-}
+    } catch (ipFallbackError) {
+      console.warn(
+        "Erro no fallback por IP:",
+        ipFallbackError
+      );
+    }
 
-/* cache clear */
-async function clearCacheAndReload(){
-  try{ localStorage.removeItem(CACHE_KEY); localStorage.removeItem(CACHE_TIME_KEY); } catch(e){}
-  setFeedback("Filtros removidos. Recarregando...");
-  await init(true);
-}
+    if (
+      locationError &&
+      locationError.code === 1
+    ) {
+      setFeedback(
+        "Permissão de localização negada. Libere a localização nas configurações do navegador."
+      );
 
-/* init */
-async function init(forceReload=false){
-  const btn=$("btnLocalize"); if(btn) btn.onclick=meLocalize;
-  const btnClear=$("btnClearCache"); if(btnClear) btnClear.onclick=clearCacheAndReload;
-  document.addEventListener("click",(e)=>{ const toggle=$("filtersToggle"); const panel=$("checkboxFilters"); if(!toggle||!panel) return; if(toggle.contains(e.target)||panel.contains(e.target)) return; closeFilterPanelIfOpen(); });
-  window.addEventListener("resize",()=>{ closeFilterPanelIfOpen(); });
-  try{
-    setFeedback("Carregando dados...");
-    await loadAndPrepareData(forceReload);
-    populateFilter();
-    renderCards();
-    setTimeout(()=>setFeedback(""),400);
-  } catch(err){
-    console.error(err);
-    setFeedback("Erro ao carregar dados. Veja console (F12).");
-    const container=$("container");
-    if(container) container.innerHTML="<p style='color:crimson;text-align:center;'>Erro ao carregar dados.</p>";
+      return;
+    }
+
+    setFeedback(
+      "Não foi possível obter sua localização. Verifique as permissões do navegador."
+    );
+  } finally {
+    meLocalizeRunning = false;
+
+    if (button) {
+      button.disabled = false;
+    }
   }
 }
 
-/* Garantir que init rode apenas após o DOM estar pronto */
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => { init().catch(err=>console.error("init error:",err)); });
+/* =========================================================
+   INICIALIZAÇÃO
+   ========================================================= */
+
+async function clearCacheAndReload() {
+  try {
+    localStorage.removeItem(
+      CACHE_KEY
+    );
+
+    localStorage.removeItem(
+      CACHE_TIME_KEY
+    );
+  } catch (error) {
+    console.warn(
+      "Erro ao limpar o cache:",
+      error
+    );
+  }
+
+  setFeedback(
+    "Filtros removidos. Recarregando..."
+  );
+
+  await init(true);
+}
+
+function bindGlobalUiEventsOnce() {
+  if (globalUiEventsBound) {
+    return;
+  }
+
+  globalUiEventsBound = true;
+
+  document.addEventListener(
+    "click",
+    event => {
+      const toggle =
+        $("filtersToggle");
+
+      const panel =
+        $("checkboxFilters");
+
+      if (!toggle || !panel) {
+        return;
+      }
+
+      if (
+        toggle.contains(
+          event.target
+        ) ||
+        panel.contains(
+          event.target
+        )
+      ) {
+        return;
+      }
+
+      closeFilterPanelIfOpen();
+    }
+  );
+
+  window.addEventListener(
+    "resize",
+    closeFilterPanelIfOpen
+  );
+}
+
+async function init(
+  forceReload = false
+) {
+  const locationButton =
+    $("btnLocalize");
+
+  if (locationButton) {
+    locationButton.onclick =
+      meLocalize;
+  }
+
+  const clearButton =
+    $("btnClearCache");
+
+  if (clearButton) {
+    clearButton.onclick =
+      clearCacheAndReload;
+  }
+
+  bindGlobalUiEventsOnce();
+
+  try {
+    setFeedback(
+      "Carregando dados..."
+    );
+
+    await loadAndPrepareData(
+      forceReload
+    );
+
+    populateFilter();
+    renderCards();
+
+    setTimeout(
+      () => setFeedback(""),
+      400
+    );
+  } catch (initializationError) {
+    console.error(
+      "Erro na inicialização:",
+      initializationError
+    );
+
+    setFeedback(
+      "Erro ao carregar os dados. Veja o console com F12."
+    );
+
+    const container =
+      $("container");
+
+    if (container) {
+      container.innerHTML =
+        '<p style="color: crimson; text-align: center;">Erro ao carregar os dados.</p>';
+    }
+  }
+}
+
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      init().catch(error =>
+        console.error(
+          "Erro no init:",
+          error
+        )
+      );
+    }
+  );
 } else {
-  init().catch(err=>console.error("init error:",err));
+  init().catch(error =>
+    console.error(
+      "Erro no init:",
+      error
+    )
+  );
 }
 
+/* =========================================================
+   POPUP E CARROSSEL
+   ========================================================= */
 
-const logo = document.querySelector(".main-header .logo img");
+const logo =
+  document.querySelector(
+    ".main-header .logo img"
+  );
 
-/* POPUP / CARROSSEL / registro de página (mantive iguais) */
-window.addEventListener('load', () => {
-  const popup = document.getElementById('blackFridayPopup');
-  const closeBtn = document.getElementById('blackFridayClose');
-  const boraBtn = document.getElementById('blackFridayBtn');
-  if (!popup) return;
-  function closePopup() { popup.style.display = 'none'; }
-  if (closeBtn) closeBtn.addEventListener('click', closePopup);
-  if (boraBtn) boraBtn.addEventListener('click', closePopup);
-});
+window.addEventListener(
+  "load",
+  () => {
+    const popup =
+      document.getElementById(
+        "blackFridayPopup"
+      );
 
-let index = 0;
-const slides = document.querySelectorAll(".black_friday-slide");
-function showSlide(i) {
-  if(!slides || !slides.length) return;
-  slides.forEach(s => s.classList.remove("active"));
-  slides[i].classList.add("active");
+    const closeButton =
+      document.getElementById(
+        "blackFridayClose"
+      );
+
+    const actionButton =
+      document.getElementById(
+        "blackFridayBtn"
+      );
+
+    if (!popup) {
+      return;
+    }
+
+    function closePopup() {
+      popup.style.display =
+        "none";
+    }
+
+    if (closeButton) {
+      closeButton.addEventListener(
+        "click",
+        closePopup
+      );
+    }
+
+    if (actionButton) {
+      actionButton.addEventListener(
+        "click",
+        closePopup
+      );
+    }
+  }
+);
+
+let slideIndex = 0;
+
+const slides =
+  document.querySelectorAll(
+    ".black_friday-slide"
+  );
+
+function showSlide(index) {
+  if (
+    !slides ||
+    !slides.length
+  ) {
+    return;
+  }
+
+  slides.forEach(slide =>
+    slide.classList.remove(
+      "active"
+    )
+  );
+
+  slides[index].classList.add(
+    "active"
+  );
 }
+
 function nextSlide() {
-  index = (index + 1) % slides.length;
-  showSlide(index);
-}
-if (slides && slides.length) {
-  setInterval(nextSlide, 5000);
-  showSlide(index);
+  if (!slides.length) {
+    return;
+  }
+
+  slideIndex =
+    (
+      slideIndex + 1
+    ) % slides.length;
+
+  showSlide(slideIndex);
 }
 
-fetch(`/api/registrar?pagina=${window.location.pathname.replace('/', '') || 'index'}`);
+if (
+  slides &&
+  slides.length
+) {
+  setInterval(
+    nextSlide,
+    5000
+  );
+
+  showSlide(slideIndex);
+}
+
+/* Registrar visita sem quebrar o site caso a API apresente erro */
+
+fetch(
+  `/api/registrar?pagina=${
+    window.location.pathname
+      .replace("/", "") ||
+    "index"
+  }`
+).catch(error =>
+  console.warn(
+    "Falha ao registrar visita:",
+    error
+  )
+);
